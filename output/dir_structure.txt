@@ -562,7 +562,8 @@
     │   │   └── __init__.py/
     │   ├── utils/
     │   │   ├── __init__.py/
-    │   │   └── dir_structure.py/
+    │   │   ├── dir_structure.py/
+    │   │   └── file2txt.py/
     │   └── __init__.py/
     ├── SSAN/
     │   ├── configs/
@@ -599,4 +600,5 @@
     │   ├── LICENSE/
     │   ├── README.md/
     │   └── solver.py/
+    ├── .env/
     └── README.md/

@@ -95,13 +95,21 @@ def main():
     # Create output directory if it doesn't exist
     os.makedirs("output", exist_ok=True)
 
+    # Delete old structure file if exists
+    structure_file = "output/dir_structure.txt"
+    if os.path.exists(structure_file):
+        os.remove(structure_file)
+        print(f"Deleted old file: {structure_file}")
+
     # Open output file
-    with open("output/dir_structure.txt", "w", encoding="utf-8") as f:
+    with open(structure_file, "w", encoding="utf-8") as f:
         # Get root directory (current directory)
         root_path = os.path.abspath(".")
 
         # Write tree structure
         write_tree(root_path, f)
+
+    print(f"Created new structure file: {structure_file}")
 
 
 if __name__ == "__main__":
