@@ -1,0 +1,200 @@
+# Kế hoạch
+
+**Mục tiêu:** Tái triển khai SSAN từ đầu trong 4 ngày, sử dụng các bộ dữ liệu CelebA-Spoof, LCC-FASD, NUAA, ZaloAI2022 để train và CATI-FAS để test.
+
+## **Ngày 1: Thiết lập dự án, môi trường và xử lý dữ liệu**
+
+- **Sáng (4 tiếng):**
+  - **Tạo cấu trúc thư mục:**
+    - Tạo thư mục gốc `ssan_from_scratch`.
+    - Tạo các thư mục con: `data`, `configs`, `datasets`, `models`, `losses`, `optimizers`, `utils`, `logs`, `checkpoints`.
+  - **Thiết lập môi trường:**
+    - Tạo môi trường ảo (conda hoặc venv) với Python 3.8 (hoặc phiên bản tương thích).
+    - Cài đặt các thư viện cần thiết: `torch`, `torchvision`, `torchaudio`, `opencv-python`, `scikit-learn`, `numpy`, `pandas`, `tqdm`, `facenet-pytorch` (cho MTCNN), `matplotlib` (để visualize nếu cần).
+  - **Tạo file `configs/config.py`:**
+    - Định nghĩa các siêu tham số (hyperparameters) mặc định: `batch_size`, `learning_rate`, `num_epochs`, `weight_decay`, `λ1`, `λ2`, đường dẫn đến các bộ dữ liệu, v.v.
+    - Sử dụng thư viện `argparse` để cho phép truyền tham số từ command line.
+  - **Nghiên cứu code mẫu và tài liệu:**
+    - Đọc kỹ code trong `SSAN_Enhance/SSAN` và bài báo SSAN để hiểu rõ các thành phần.
+    - Ôn lại kiến thức về PyTorch.
+
+- **Chiều (4 tiếng):**
+  - **Viết code trong `datasets/dataset.py`:**
+    - **Định nghĩa lớp `FASDataset` kế thừa từ `torch.utils.data.Dataset`:**
+      - **`__init__(self, data_dirs, config, transform=None, mode='train')`:**
+        - `data_dirs`: Danh sách đường dẫn đến các thư mục chứa dữ liệu (CelebA-Spoof, LCC-FASD, NUAA, ZaloAI2022, CATI-FAS).
+        - `config`: Đối tượng chứa các siêu tham số.
+        - `transform`: Các phép biến đổi (augmentation) áp dụng cho ảnh.
+        - `mode`: Chế độ ('train', 'val', 'test').
+        - Load danh sách các file ảnh và nhãn tương ứng cho từng bộ dữ liệu dựa trên `mode`.
+        - Khởi tạo các hàm tiền xử lý (face detection, resize, dense face alignment).
+      - **`__len__(self)`:** Trả về số lượng mẫu trong tập dữ liệu.
+      - **`__getitem__(self, idx)`:**
+        - Đọc ảnh từ đường dẫn tương ứng với `idx`.
+        - Áp dụng các bước tiền xử lý:
+          - **Face Detection:** Sử dụng MTCNN để phát hiện và cắt khuôn mặt.
+          - **Resize:** Resize ảnh về kích thước 256x256.
+          - **Dense Face Alignment:** Sử dụng PRNet để tạo depth map 32x32 cho ảnh live. Đối với ảnh spoof, gán depth map bằng ma trận 0.
+        - Áp dụng data augmentation (nếu `mode` là 'train'):
+          - **Random Rotation:** Xoay ảnh ngẫu nhiên một góc trong khoảng [-10, 10] độ.
+          - **Random Horizontal Flipping:** Lật ảnh theo chiều ngang với xác suất 0.5.
+          - **Color Jittering:** Thay đổi độ sáng, độ tương phản, độ bão hòa và màu sắc của ảnh một cách ngẫu nhiên.
+          - **Gaussian Blurring:** Làm mờ ảnh với xác suất thấp (ví dụ: 0.1).
+        - **Normalization:** Chuẩn hóa dữ liệu ảnh về dạng phù hợp (ví dụ: giá trị pixel trong khoảng [0, 1] hoặc [-1, 1]).
+        - Trả về ảnh (tensor), depth map (tensor, nếu có), nhãn (live: 1, spoof: 0, tensor), và domain (đánh số từ 0 cho từng bộ dữ liệu, tensor).
+    - **Tạo các hàm tiền xử lý và augmentation trong `datasets/preprocessing.py`:**
+      - Viết các hàm cho face detection, resize, dense face alignment, và các kỹ thuật augmentation.
+    - **Phân chia dữ liệu:**
+      - Gộp các bộ dữ liệu CelebA-Spoof, LCC-FASD, NUAA, ZaloAI2022 thành tập train và validation.
+      - Sử dụng 80% cho train, 20% cho validation (có thể điều chỉnh tỷ lệ).
+      - Dữ liệu CATI-FAS sẽ được sử dụng làm tập test cuối cùng.
+  - **Viết code trong `datasets/dataloaders.py`:**
+    - **Định nghĩa hàm `get_dataloaders(config)`:**
+      - Tạo các `DataLoader` cho tập train, validation, và test sử dụng `FASDataset` và `torch.utils.data.DataLoader`.
+      - Thiết lập các tham số `batch_size`, `shuffle=True` cho train, `shuffle=False` cho validation và test, `num_workers`.
+  - **Test DataLoader:**
+    - Viết một đoạn code ngắn trong `datasets/dataloaders.py` (hoặc trong một file riêng) để test xem `DataLoader` có hoạt động đúng không (in ra shape của các tensor, hiển thị thử một vài ảnh).
+
+## **Ngày 2: Xây dựng kiến trúc mạng và định nghĩa hàm mất mát**
+
+- **Sáng (4 tiếng):**
+  - **Viết code trong `models/components.py`:**
+    - **`FeatureGenerator`:**
+      - Định nghĩa lớp `FeatureGenerator` (CNN nông, ví dụ: 3-4 lớp Conv2d + ReLU + MaxPool2d).
+    - **`ContentFeatureExtractor`:**
+      - Định nghĩa lớp `ContentFeatureExtractor` (CNN, ví dụ: 5-6 lớp Conv2d + BN + ReLU).
+      - Thêm **Gradient Reversal Layer (GRL)** (có thể tự implement hoặc tham khảo code trên mạng).
+    - **`StyleFeatureExtractor`:**
+      - Định nghĩa lớp `StyleFeatureExtractor` (CNN, ví dụ: 5-6 lớp Conv2d + IN + ReLU).
+      - Trích xuất feature style từ nhiều scale của `FeatureGenerator` (ví dụ: sau mỗi lớp MaxPool2d).
+    - **`AdaIN`:**
+      - Định nghĩa lớp `AdaIN(nn.Module)`.
+      - `forward(self, content, style)`: Thực hiện AdaIN transformation.
+    - **`StyleAssemblyLayer (SAL)`:**
+      - Định nghĩa lớp `StyleAssemblyLayer(nn.Module)`.
+      - Kết hợp AdaIN, Conv2d, và ReLU.
+      - `forward(self, content, style)`: Thực hiện Style Assembly.
+    - **`Classifier`:**
+      - Định nghĩa lớp `Classifier` (ví dụ: 2-3 lớp Linear + ReLU + Dropout).
+      - Đầu ra là 2 nodes (live/spoof).
+    - **`DomainDiscriminator`:**
+      - Định nghĩa lớp `DomainDiscriminator` (ví dụ: 2-3 lớp Linear + LeakyReLU).
+      - Đầu ra là số lượng domain (trong trường hợp này là 5).
+
+- **Chiều (4 tiếng):**
+  - **Viết code trong `models/ssan.py`:**
+    - **Định nghĩa lớp `SSAN` kế thừa từ `nn.Module`:**
+      - **`__init__(self, config)`:**
+        - Khởi tạo các module con (`FeatureGenerator`, `ContentFeatureExtractor`, `StyleFeatureExtractor`, `StyleAssemblyLayer`, `Classifier`, `DomainDiscriminator`).
+        - Số lượng `StyleAssemblyLayer` có thể được cấu hình trong `config.py`.
+      - **`forward(self, x, domains)`:**
+        - Thực hiện forward pass qua toàn bộ mạng.
+        - Trích xuất content feature và style feature.
+        - Thực hiện Style Assembly với shuffling.
+        - Trả về output của `Classifier` (dự đoán live/spoof) và output của `DomainDiscriminator` (dự đoán domain).
+  - **Viết code trong `losses/losses.py`:**
+    - **`Lcls`:** Sử dụng `nn.CrossEntropyLoss` cho bài toán phân loại binary (live/spoof).
+    - **`Ladv`:** Sử dụng `nn.CrossEntropyLoss` để phân loại domain.
+    - **`Lcontra`:**
+      - Định nghĩa hàm `calculate_contrastive_loss(features, labels)` (hoặc tên tương tự).
+      - Tính toán cosine similarity giữa các feature.
+      - Áp dụng công thức contrastive loss (tham khảo paper và phần giải thích logic SSAN).
+      - Sử dụng `stopgrad` để ngăn chặn gradient backpropagation qua self-assembly features.
+  - **Test các lớp và hàm loss:**
+    - Tạo các tensor ngẫu nhiên có shape phù hợp để test các lớp trong `models` và các hàm loss trong `losses`.
+    - Kiểm tra output và giá trị loss.
+
+## **Ngày 3: Xây dựng Optimizers, Trainer và chuẩn bị quá trình huấn luyện**
+
+- **Sáng (4 tiếng):**
+  - **Viết code trong `optimizers/optimizer.py`:**
+    - **Định nghĩa hàm `get_optimizer(model, config)`:**
+      - Khởi tạo optimizer (ví dụ: Adam, SGD) cho mô hình `model`.
+      - Thiết lập `learning_rate`, `weight_decay` từ `config`.
+    - (Tùy chọn) Định nghĩa scheduler để điều chỉnh learning rate (ví dụ: `ReduceLROnPlateau`, `StepLR`).
+  - **Viết code trong `utils/utils.py`:**
+    - **`calculate_accuracy(outputs, labels)`:** Tính accuracy.
+    - **`calculate_tpr_fpr(outputs, labels)`:** Tính TPR và FPR.
+    - **`calculate_auc(outputs, labels)`:** Tính AUC (có thể sử dụng `sklearn.metrics.roc_auc_score`).
+    - **`save_checkpoint(model, optimizer, epoch, config, filename)`:** Lưu trạng thái của `model` và `optimizer` vào file `filename`.
+    - **`load_checkpoint(model, optimizer, filename)`:** Load trạng thái của `model` và `optimizer` từ file `filename`.
+    - **`create_logger(log_dir)`:** Tạo logger để ghi lại quá trình huấn luyện và đánh giá (có thể sử dụng thư viện `logging`).
+
+- **Chiều (4 tiếng):**
+  - **Viết code trong `trainers/trainer.py`:**
+    - **Định nghĩa lớp `Trainer`:**
+      - **`__init__(self, model, dataloaders, optimizer, losses, config, device)`:**
+        - `model`: Mô hình SSAN.
+        - `dataloaders`: Dictionary chứa `DataLoader` cho train, validation, và test.
+        - `optimizer`: Optimizer.
+        - `losses`: Dictionary chứa các hàm loss (`Lcls`, `Ladv`, `Lcontra`).
+        - `config`: Đối tượng chứa các siêu tham số.
+        - `device`: 'cpu' hoặc 'cuda'.
+        - Khởi tạo logger.
+      - **`train_one_epoch(self, epoch)`:**
+        - Lặp qua các batch trong `dataloaders['train']`.
+        - Thực hiện forward pass:
+          - Lấy dữ liệu từ `DataLoader`.
+          - Cho dữ liệu qua mô hình `model` để lấy output.
+          - Thực hiện shuffling style features (có thể viết hàm riêng `shuffle_style_features` trong `utils.py`).
+          - Tính toán các loss:
+            - `Lcls` (dựa trên output của `Classifier` và nhãn live/spoof).
+            - `Ladv` (dựa trên output của `DomainDiscriminator` và nhãn domain, áp dụng GRL).
+            - `Lcontra` (dựa trên các stylized features và nhãn live/spoof).
+          - Tính `Loverall = Lcls + λ1 * Ladv + λ2 * Lcontra`.
+        - Thực hiện backward pass:
+          - `optimizer.zero_grad()`.
+          - `Loverall.backward()`.
+          - `optimizer.step()`.
+        - Ghi lại loss và accuracy vào logger.
+        - In ra thông tin huấn luyện sau mỗi batch hoặc sau một số iteration nhất định.
+      - **`validate(self, epoch)`:**
+        - Chuyển mô hình sang chế độ đánh giá (`model.eval()`).
+        - Tắt gradient (`with torch.no_grad():`).
+        - Lặp qua các batch trong `dataloaders['val']`.
+        - Thực hiện forward pass (không cần shuffling).
+        - Tính toán loss và các metrics (accuracy, TPR, FPR, AUC).
+        - Ghi lại kết quả vào logger.
+        - In ra thông tin đánh giá.
+      - **`test(self, epoch)`:** (Tương tự `validate` nhưng sử dụng `dataloaders['test']` và tập trung vào các metrics như TPR@FPR).
+      - **`train(self)`:**
+        - Lặp qua các epoch:
+          - Gọi `self.train_one_epoch(epoch)`.
+          - Gọi `self.validate(epoch)`.
+          - Lưu checkpoint nếu đạt kết quả tốt nhất trên tập validation (dựa trên accuracy hoặc AUC).
+          - (Tùy chọn) Cập nhật scheduler.
+        - Sau khi huấn luyện xong, gọi `self.test()` để đánh giá trên tập test.
+
+## **Ngày 4: Hoàn thiện, huấn luyện, đánh giá, lưu mô hình và phân tích kết quả**
+
+- **Sáng (4 tiếng):**
+  - **Viết code trong `main.py`:**
+    - **`main()`:**
+      - Parse command line arguments (sử dụng `argparse`) để lấy các siêu tham số từ `config.py` hoặc từ command line.
+      - Khởi tạo `device` ('cpu' hoặc 'cuda').
+      - Gọi hàm `get_dataloaders` từ `dataloaders.py` để load dữ liệu.
+      - Khởi tạo mô hình `SSAN` từ `models/ssan.py`.
+      - Khởi tạo optimizer từ `optimizers/optimizer.py`.
+      - Khởi tạo các hàm loss từ `losses/losses.py`.
+      - Khởi tạo `Trainer` từ `trainers/trainer.py`.
+      - Gọi `trainer.train()` để bắt đầu huấn luyện.
+      - (Tùy chọn) Load checkpoint để tiếp tục huấn luyện hoặc để đánh giá.
+  - **Hoàn thiện code:**
+    - Kiểm tra lại toàn bộ code, đảm bảo các module hoạt động chính xác.
+    - Viết docstring cho các class và function.
+    - Xử lý các lỗi có thể xảy ra (exception handling).
+
+- **Chiều (4 tiếng):**
+  - **Huấn luyện mô hình:**
+    - Chạy file `main.py` với các siêu tham số phù hợp (có thể thử nghiệm với các giá trị khác nhau).
+    - Theo dõi quá trình huấn luyện thông qua logger (kiểm tra loss, accuracy, v.v.).
+    - Điều chỉnh các siêu tham số nếu cần (ví dụ: learning rate, weight decay, số epoch).
+  - **Đánh giá mô hình:**
+    - Sau khi huấn luyện xong, đánh giá mô hình trên tập test (CATI-FAS) để lấy các metrics (accuracy, TPR@FPR, AUC).
+  - **Lưu mô hình:**
+    - Lưu checkpoint tốt nhất (dựa trên kết quả trên tập validation) vào thư mục `checkpoints`.
+  - **Phân tích kết quả:**
+    - Ghi lại kết quả đánh giá vào file (ví dụ: CSV, text).
+    - (Tùy chọn) Visualize kết quả (ví dụ: vẽ đồ thị loss, accuracy theo epoch, vẽ ROC curve).
+    - So sánh kết quả với các phương pháp khác (nếu có).
+    - Rút ra kết luận về hiệu quả của mô hình.
