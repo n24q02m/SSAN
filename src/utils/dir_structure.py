@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 
 def count_dirs_and_files(path):

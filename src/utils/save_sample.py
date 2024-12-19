@@ -2,7 +2,6 @@ import os
 import cv2
 import random
 from pathlib import Path
-from tqdm import tqdm
 
 # Dataset paths
 DATASETS = {

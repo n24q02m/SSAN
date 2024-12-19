@@ -1,5 +1,4 @@
 import os
-import shutil
 import zipfile
 import multiprocessing as mp
 from pathlib import Path
