@@ -7,3 +7,4 @@ scikit-learn
 matplotlib
 onnxruntime-gpu
 insightface
+prefetch_generator
