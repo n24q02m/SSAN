@@ -1,13 +1,21 @@
 import os
-import glob
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
 import cv2
 import torch
-import numpy as np
-from torch.utils.data import Dataset, DataLoader
+import numpy as np 
+import pandas as pd
 from pathlib import Path
-import albumentations as A 
+from torch.utils.data import Dataset, DataLoader
+import albumentations as A
 from albumentations.pytorch import ToTensorV2
-from sklearn.model_selection import train_test_split
+import multiprocessing as mp
+from functools import partial
+from torch.utils.data import DataLoader, Dataset
+from prefetch_generator import BackgroundGenerator
+
 
 from src.config import Config
 
@@ -38,108 +46,6 @@ def get_transforms(mode="train", config=None):
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), 
             ToTensorV2()
         ])
-
-class FASDataset(Dataset):
-    def __init__(self, data_dirs, config, transform=None, mode='train'):
-        self.data_dirs = data_dirs
-        self.config = config
-        self.transform = transform
-        self.mode = mode
-        self.data = []
-
-        if mode == 'train' or mode == 'val':
-            for data_dir in data_dirs:
-                dataset_name = Path(data_dir).name.replace("_dataset", "")
-                live_dir = os.path.join(data_dir, "live")
-                spoof_dir = os.path.join(data_dir, "spoof")
-
-                # Gather images and their bbox files
-                for img_path in glob.glob(os.path.join(live_dir, "*.jpg")) + \
-                              glob.glob(os.path.join(live_dir, "*.png")):
-                    bbox_path = img_path.replace(".jpg", "_BB.txt").replace(".png", "_BB.txt")
-                    if os.path.exists(bbox_path):
-                        self.data.append((img_path, 1, dataset_name, bbox_path))
-
-                for img_path in glob.glob(os.path.join(spoof_dir, "*.jpg")) + \
-                              glob.glob(os.path.join(spoof_dir, "*.png")):
-                    bbox_path = img_path.replace(".jpg", "_BB.txt").replace(".png", "_BB.txt")
-                    if os.path.exists(bbox_path):
-                        self.data.append((img_path, 0, dataset_name, bbox_path))
-
-            if mode == 'train':
-                train_data, _ = train_test_split(self.data, test_size=1-config.train_ratio, 
-                                               random_state=config.seed)
-                self.data = train_data
-            else:
-                _, val_data = train_test_split(self.data, test_size=1-config.train_ratio,
-                                             random_state=config.seed)
-                self.data = val_data
-        else:
-            # Test mode
-            data_dir = data_dirs[0]
-            dataset_name = Path(data_dir).name.replace("_dataset", "")
-            
-            for folder in ['live', 'spoof']:
-                folder_dir = os.path.join(data_dir, folder)
-                label = 1 if folder == 'live' else 0
-                
-                for img_path in glob.glob(os.path.join(folder_dir, "*.jpg")) + \
-                              glob.glob(os.path.join(folder_dir, "*.png")):
-                    bbox_path = img_path.replace(".jpg", "_BB.txt").replace(".png", "_BB.txt")
-                    if os.path.exists(bbox_path):
-                        self.data.append((img_path, label, dataset_name, bbox_path))
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        img_path, label, dataset_name, bbox_path = self.data[idx]
-        
-        # Read image and get original size
-        image = cv2.imread(img_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        orig_h, orig_w = image.shape[:2]
-
-        # Read bbox
-        with open(bbox_path, "r") as f:
-            bbox_info = f.readline().strip().split()
-            x, y, w, h = map(int, bbox_info[:4])
-
-        # Resize image first like in face detection
-        scale = self.config.face_det_size / max(orig_h, orig_w)
-        if scale < 1:
-            new_h = int(orig_h * scale)
-            new_w = int(orig_w * scale)
-            image = cv2.resize(image, (new_w, new_h))
-            
-            # Scale bbox
-            x = int(x * scale)
-            y = int(y * scale)
-            w = int(w * scale) 
-            h = int(h * scale)
-        
-        # Crop using scaled bbox
-        if (y >= 0 and y + h <= image.shape[0] and 
-            x >= 0 and x + w <= image.shape[1]):
-            image = image[y:y+h, x:x+w]
-
-        # Final resize to model input size
-        image = cv2.resize(image, (self.config.img_size, self.config.img_size))
-
-        # Create depth map
-        depth_map = np.zeros((self.config.depth_map_size, self.config.depth_map_size))
-
-        # Apply transforms
-        if self.transform:
-            transformed = self.transform(image=image)
-            image = transformed["image"]
-
-        # Convert to tensor
-        depth_map = torch.tensor(depth_map, dtype=torch.float32).unsqueeze(0)
-        label = torch.tensor(label, dtype=torch.long)
-        domain = torch.tensor(self.config.dataset_names.index(dataset_name), dtype=torch.long)
-
-        return image, depth_map, label, domain
 
 def split_data(dataset_paths, config):
     """Split data according to protocol"""
@@ -173,54 +79,187 @@ def split_data(dataset_paths, config):
 
     return train_dirs, val_dirs, test_dirs
 
-def get_dataloaders(train_dirs, val_dirs, test_dirs, config):
-    """Create data loaders"""
-    train_dataset = FASDataset(train_dirs, config, transform=get_transforms("train", config), 
-                              mode='train')
-    val_dataset = FASDataset(val_dirs, config, transform=get_transforms("val", config), 
-                            mode='val')
-    test_dataset = FASDataset(test_dirs, config, transform=get_transforms("test", config), 
-                             mode='test')
+def create_protocol_data(protocol, dataset_paths, config):
+    """Create data for a single protocol"""
+    print(f"\nCreating {protocol} splits...")
+    config.protocol = protocol
+    train_dirs, val_dirs, test_dirs = split_data(dataset_paths, config)
+    
+    protocol_dir = config.protocol_dir / protocol
+    protocol_dir.mkdir(parents=True, exist_ok=True)
+    
+    all_data = {}
+    for mode, dirs in [("train", train_dirs), ("val", val_dirs), ("test", test_dirs)]:
+        data = []
+        for data_dir in dirs:
+            dataset_name = Path(data_dir).name
+            if config.is_kaggle:
+                dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
+            else:
+                dataset_name = dataset_name.replace("_dataset", "")
+            
+            # Sử dụng list comprehension thay vì loop
+            for folder, label in [("live", 1), ("spoof", 0)]:
+                folder_dir = Path(data_dir) / folder
+                data.extend([
+                    {
+                        "dataset": dataset_name,
+                        "filename": img_path.stem,
+                        "label": label,
+                        "folder": folder
+                    }
+                    for img_path in folder_dir.glob("*.[jp][pn][g]")
+                    if (img_path.parent / f"{img_path.stem}_BB.txt").exists()
+                ])
+        
+        all_data[mode] = pd.DataFrame(data)
+    
+    # Train/val split
+    if "train" in all_data:
+        train_df = all_data["train"].sample(frac=config.train_ratio, random_state=config.seed)
+        train_df.to_csv(protocol_dir / "train.csv", index=False)
+        print(f"Created train.csv with {len(train_df)} samples")
 
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True,
-                            num_workers=config.num_workers)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False,
-                          num_workers=config.num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False,
-                           num_workers=config.num_workers)
+        if "val" in all_data:
+            val_df = all_data["val"][~all_data["val"]["filename"].isin(train_df["filename"])]
+            val_df.to_csv(protocol_dir / "val.csv", index=False)
+            print(f"Created val.csv with {len(val_df)} samples")
+    
+    if "test" in all_data:
+        all_data["test"].to_csv(protocol_dir / "test.csv", index=False)
+        print(f"Created test.csv with {len(all_data['test'])} samples")
+
+def create_protocol_splits(dataset_paths, config):
+    """Create CSV files for all protocols in parallel"""
+    protocols = ["protocol_1", "protocol_2", "protocol_3", "protocol_4"]
+    
+    # Sử dụng multiprocessing để xử lý song song các protocol
+    with mp.Pool(min(len(protocols), mp.cpu_count())) as pool:
+        pool.map(
+            partial(create_protocol_data, dataset_paths=dataset_paths, config=config),
+            protocols
+        )
+
+class FASDataset(Dataset):
+    def __init__(self, protocol_csv, config, transform=None):
+        self.config = config
+        self.transform = transform
+        self.data = pd.read_csv(protocol_csv)
+        
+        # Cache image paths và bbox
+        self.cached_paths = []
+        for idx in range(len(self.data)):
+            row = self.data.iloc[idx]
+            if config.is_kaggle:
+                dataset_dir = config.data_dir / f"{row['dataset']}-face-anti-spoofing-dataset"
+            else:
+                dataset_dir = config.data_dir / f"{row['dataset']}_dataset"
+                
+            img_dir = dataset_dir / row["folder"]
+            img_path = next(img_dir.glob(f"{row['filename']}.*"))
+            bbox_path = img_path.parent / f"{img_path.stem}_BB.txt"
+            
+            with open(bbox_path) as f:
+                x, y, w, h = map(int, f.read().strip().split()[:4])
+                
+            self.cached_paths.append({
+                'img_path': img_path,
+                'bbox': (x, y, w, h)
+            })
+            
+    def __getitem__(self, idx):
+        row = self.data.iloc[idx]
+        cached = self.cached_paths[idx]
+        
+        # Load and process image
+        image = cv2.imread(str(cached['img_path']))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
+        orig_h, orig_w = image.shape[:2]
+        
+        # Get cached bbox
+        x, y, w, h = cached['bbox']
+        
+        # Process image efficiently
+        scale = self.config.face_det_size / max(orig_h, orig_w)
+        if scale < 1:
+            # Resize image và bbox một lần
+            new_h = int(orig_h * scale)
+            new_w = int(orig_w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+            x, y, w, h = [int(v * scale) for v in (x, y, w, h)]
+
+        # Crop & resize 
+        if (y >= 0 and y + h <= image.shape[0] and
+            x >= 0 and x + w <= image.shape[1]):
+            image = image[y:y+h, x:x+w]
+        image = cv2.resize(image, (self.config.img_size, self.config.img_size))
+        
+        # Create depth map một lần
+        depth_map = torch.zeros((1, self.config.depth_map_size, self.config.depth_map_size))
+
+        # Apply transforms
+        if self.transform:
+            transformed = self.transform(image=image)
+            image = transformed["image"]
+
+        # Convert to tensors
+        label = torch.tensor(row["label"], dtype=torch.long)
+        domain = torch.tensor(self.config.dataset_names.index(row["dataset"]), dtype=torch.long)
+
+        return image, depth_map, label, domain
+
+class DataLoaderX(DataLoader):
+    def __iter__(self):
+        return BackgroundGenerator(super().__iter__())
+
+def get_dataloaders(config):
+    """Create data loaders with prefetching"""
+    protocol_dir = config.protocol_dir / config.protocol
+    
+    train_dataset = FASDataset(
+        protocol_dir / "train.csv",
+        config,
+        transform=get_transforms("train", config)
+    )
+    val_dataset = FASDataset(
+        protocol_dir / "val.csv", 
+        config,
+        transform=get_transforms("val", config)
+    )
+    test_dataset = FASDataset(
+        protocol_dir / "test.csv",
+        config, 
+        transform=get_transforms("test", config)
+    )
 
     return {
-        "train": train_loader,
-        "val": val_loader,
-        "test": test_loader
+        "train": DataLoaderX(
+            train_dataset,
+            batch_size=config.batch_size,
+            shuffle=True,
+            num_workers=config.num_workers,
+            pin_memory=True  # Sử dụng pinned memory cho GPU
+        ),
+        "val": DataLoaderX(
+            val_dataset,
+            batch_size=config.batch_size,
+            shuffle=False,
+            num_workers=config.num_workers,
+            pin_memory=True
+        ),
+        "test": DataLoaderX(
+            test_dataset,
+            batch_size=config.batch_size, 
+            shuffle=False,
+            num_workers=config.num_workers,
+            pin_memory=True
+        )
     }
 
-def prepare_data(config):
-    """Main function to prepare data"""
-    config.dataset_names = [p.name.replace("_dataset","") 
-                          for p in Path(config.data_dir).glob("*_dataset")]
-                          
-    train_dirs, val_dirs, test_dirs = split_data(config.dataset_paths, config)
-    dataloaders = get_dataloaders(train_dirs, val_dirs, test_dirs, config)
-    return dataloaders
-
 def main():
-    """Test the implementation"""
+    """Generate protocol splits"""
     config = Config()
-    config.protocol = "protocol_1"
-    
-    dataloaders = prepare_data(config)
-    
-    # Test dataloaders
-    for mode in ["train", "val", "test"]:
-        print(f"\nTesting {mode} dataloader")
-        loader = dataloaders[mode]
-        print(f"Number of batches: {len(loader)}")
-        images, depth_maps, labels, domains = next(iter(loader))
-        print(f"Image batch shape: {images.shape}")
-        print(f"Depth map batch shape: {depth_maps.shape}")
-        print(f"Label batch shape: {labels.shape}")
-        print(f"Domain batch shape: {domains.shape}")
+    create_protocol_splits(config.dataset_paths, config)
 
 if __name__ == "__main__":
     main()
