@@ -2,31 +2,29 @@
     ├── data/
     │   ├── CATI_FAS_dataset/
     │   │   ├── live/
-    │   │   │   └── live/
-    │   │   │       ├── 000001.jpg/
-    │   │   │       ├── 000001_BB.txt/
-    │   │   │       ├── 000002.jpg/
-    │   │   │       ├── 000002_BB.txt/
-    │   │   │       ├── 000003.jpg/
-    │   │   │       ├── 000003_BB.txt/
-    │   │   │       ├── 000004.jpg/
-    │   │   │       ├── 000004_BB.txt/
-    │   │   │       ├── 000005.jpg/
-    │   │   │       ├── 000005_BB.txt/
-    │   │   │       ... (4016 more files)
+    │   │   │   ├── 000001.jpg/
+    │   │   │   ├── 000001_BB.txt/
+    │   │   │   ├── 000002.jpg/
+    │   │   │   ├── 000002_BB.txt/
+    │   │   │   ├── 000003.jpg/
+    │   │   │   ├── 000003_BB.txt/
+    │   │   │   ├── 000004.jpg/
+    │   │   │   ├── 000004_BB.txt/
+    │   │   │   ├── 000005.jpg/
+    │   │   │   ├── 000005_BB.txt/
+    │   │   │   ... (3998 more files)
     │   │   ├── spoof/
-    │   │   │   └── spoof/
-    │   │   │       ├── 002014.jpg/
-    │   │   │       ├── 002014_BB.txt/
-    │   │   │       ├── 002015.jpg/
-    │   │   │       ├── 002015_BB.txt/
-    │   │   │       ├── 002016.jpg/
-    │   │   │       ├── 002016_BB.txt/
-    │   │   │       ├── 002017.jpg/
-    │   │   │       ├── 002017_BB.txt/
-    │   │   │       ├── 002018.jpg/
-    │   │   │       ├── 002018_BB.txt/
-    │   │   │       ... (32544 more files)
+    │   │   │   ├── 002005.jpg/
+    │   │   │   ├── 002005_BB.txt/
+    │   │   │   ├── 002006.jpg/
+    │   │   │   ├── 002006_BB.txt/
+    │   │   │   ├── 002007.jpg/
+    │   │   │   ├── 002007_BB.txt/
+    │   │   │   ├── 002008.jpg/
+    │   │   │   ├── 002008_BB.txt/
+    │   │   │   ├── 002009.jpg/
+    │   │   │   ├── 002009_BB.txt/
+    │   │   │   ... (32006 more files)
     │   │   └── dataset-metadata.json/
     │   ├── CelebA_Spoof_dataset/
     │   │   ├── live/
@@ -40,19 +38,19 @@
     │   │   │   ├── 000004_BB.txt/
     │   │   │   ├── 000005.jpg/
     │   │   │   ├── 000005_BB.txt/
-    │   │   │   ... (368804 more files)
+    │   │   │   ... (366318 more files)
     │   │   ├── spoof/
-    │   │   │   ├── 184408.jpg/
-    │   │   │   ├── 184408_BB.txt/
-    │   │   │   ├── 184409.jpg/
-    │   │   │   ├── 184409_BB.txt/
-    │   │   │   ├── 184410.jpg/
-    │   │   │   ├── 184410_BB.txt/
-    │   │   │   ├── 184411.jpg/
-    │   │   │   ├── 184411_BB.txt/
-    │   │   │   ├── 184412.jpg/
-    │   │   │   ├── 184412_BB.txt/
-    │   │   │   ... (754326 more files)
+    │   │   │   ├── 183165.jpg/
+    │   │   │   ├── 183165_BB.txt/
+    │   │   │   ├── 183166.jpg/
+    │   │   │   ├── 183166_BB.txt/
+    │   │   │   ├── 183167.jpg/
+    │   │   │   ├── 183167_BB.txt/
+    │   │   │   ├── 183168.jpg/
+    │   │   │   ├── 183168_BB.txt/
+    │   │   │   ├── 183169.jpg/
+    │   │   │   ├── 183169_BB.txt/
+    │   │   │   ... (695746 more files)
     │   │   └── dataset-metadata.json/
     │   ├── LCC_FASD_dataset/
     │   │   ├── live/
@@ -66,19 +64,19 @@
     │   │   │   ├── 000004_BB.txt/
     │   │   │   ├── 000005.png/
     │   │   │   ├── 000005_BB.txt/
-    │   │   │   ... (3866 more files)
+    │   │   │   ... (436 more files)
     │   │   ├── spoof/
-    │   │   │   ├── 001939.png/
-    │   │   │   ├── 001939_BB.txt/
-    │   │   │   ├── 001940.png/
-    │   │   │   ├── 001940_BB.txt/
-    │   │   │   ├── 001941.png/
-    │   │   │   ├── 001941_BB.txt/
-    │   │   │   ├── 001942.png/
-    │   │   │   ├── 001942_BB.txt/
-    │   │   │   ├── 001943.png/
-    │   │   │   ├── 001943_BB.txt/
-    │   │   │   ... (33490 more files)
+    │   │   │   ├── 000224.png/
+    │   │   │   ├── 000224_BB.txt/
+    │   │   │   ├── 000225.png/
+    │   │   │   ├── 000225_BB.txt/
+    │   │   │   ├── 000226.png/
+    │   │   │   ├── 000226_BB.txt/
+    │   │   │   ├── 000227.png/
+    │   │   │   ├── 000227_BB.txt/
+    │   │   │   ├── 000228.png/
+    │   │   │   ├── 000228_BB.txt/
+    │   │   │   ... (5272 more files)
     │   │   └── dataset-metadata.json/
     │   ├── NUAAA_dataset/
     │   │   ├── live/
@@ -106,6 +104,23 @@
     │   │   │   ├── 005110_BB.txt/
     │   │   │   ... (15008 more files)
     │   │   └── dataset-metadata.json/
+    │   ├── protocols/
+    │   │   ├── protocol_1/
+    │   │   │   ├── test.csv/
+    │   │   │   ├── train.csv/
+    │   │   │   └── val.csv/
+    │   │   ├── protocol_2/
+    │   │   │   ├── test.csv/
+    │   │   │   ├── train.csv/
+    │   │   │   └── val.csv/
+    │   │   ├── protocol_3/
+    │   │   │   ├── test.csv/
+    │   │   │   ├── train.csv/
+    │   │   │   └── val.csv/
+    │   │   └── protocol_4/
+    │   │       ├── test.csv/
+    │   │       ├── train.csv/
+    │   │       └── val.csv/
     │   ├── Zalo_AIC_dataset/
     │   │   ├── live/
     │   │   │   ├── 000001.jpg/
@@ -118,36 +133,45 @@
     │   │   │   ├── 000004_BB.txt/
     │   │   │   ├── 000005.jpg/
     │   │   │   ├── 000005_BB.txt/
-    │   │   │   ... (5308 more files)
+    │   │   │   ... (5246 more files)
     │   │   ├── spoof/
-    │   │   │   ├── 002660.jpg/
-    │   │   │   ├── 002660_BB.txt/
-    │   │   │   ├── 002661.jpg/
-    │   │   │   ├── 002661_BB.txt/
-    │   │   │   ├── 002662.jpg/
-    │   │   │   ├── 002662_BB.txt/
-    │   │   │   ├── 002663.jpg/
-    │   │   │   ├── 002663_BB.txt/
-    │   │   │   ├── 002664.jpg/
-    │   │   │   ├── 002664_BB.txt/
-    │   │   │   ... (5140 more files)
+    │   │   │   ├── 002629.jpg/
+    │   │   │   ├── 002629_BB.txt/
+    │   │   │   ├── 002630.jpg/
+    │   │   │   ├── 002630_BB.txt/
+    │   │   │   ├── 002631.jpg/
+    │   │   │   ├── 002631_BB.txt/
+    │   │   │   ├── 002632.jpg/
+    │   │   │   ├── 002632_BB.txt/
+    │   │   │   ├── 002633.jpg/
+    │   │   │   ├── 002633_BB.txt/
+    │   │   │   ... (5058 more files)
     │   │   └── dataset-metadata.json/
     ├── docs/
     │   ├── Domain Generalization via Shuffled Style Assembly for Face Anti-Spoofing.pdf/
+    │   ├── enviroment.md/
     │   ├── plans.md/
     │   └── protocols.md/
     ├── output/
     │   └── dir_structure.txt/
     ├── src/
+    │   ├── __pycache__/
+    │   │   ├── __init__.cpython-310.pyc/
+    │   │   └── config.cpython-310.pyc/
     │   ├── data/
-    │   │   └── __init__.py/
+    │   │   ├── __init__.py/
+    │   │   └── datasets.py/
     │   ├── model/
     │   │   └── __init__.py/
     │   ├── utils/
     │   │   ├── __init__.py/
     │   │   ├── dir_structure.py/
-    │   │   └── file2txt.py/
-    │   └── __init__.py/
+    │   │   ├── file2txt.py/
+    │   │   ├── postprocess_datasets.py/
+    │   │   ├── redetect_datasets.py/
+    │   │   └── save_sample.py/
+    │   ├── __init__.py/
+    │   └── config.py/
     ├── SSAN/
     │   ├── configs/
     │   │   └── __init__.py/
@@ -184,4 +208,5 @@
     │   ├── README.md/
     │   └── solver.py/
     ├── .env/
-    └── README.md/
+    ├── README.md/
+    └── requirements.txt/
