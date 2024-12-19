@@ -1,8 +1,9 @@
-dotenv
+python-dotenv
 albumentations
 opencv-python
 numpy
 pandas
-glob
 scikit-learn
 matplotlib
+onnxruntime-gpu
+insightface
