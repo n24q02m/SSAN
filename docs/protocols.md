@@ -1,63 +1,58 @@
-# Protocols
+# Face Anti-Spoofing Testing Protocols
 
-## Protocol 1: Large-Scale Training
+## Protocol 1: Single Large-Scale Dataset
 
-- Training: CelebA-Spoof (90% split)
-  - Size: ~65 GB
-  - Images: ~478K images (329K live + 622K spoof)
-  - Rationale: Dataset lớn nhất, đa dạng nhất, phù hợp cho huấn luyện ban đầu
+Testing generalization on a single large dataset
 
-- Validation: CelebA-Spoof (10% split)
-  - Size: ~7.2 GB
-  - Images: ~53K images (37K live + 74K spoof)
+- **Training (60%)**: ~319k samples
+  - 220k live + 418k spoof
+  - ~43.3 GB
+- **Validation (20%)**: ~106k samples
+  - 73k live + 139k spoof
+  - ~14.4 GB
+- **Testing (20%)**: ~106k samples
+  - 73k live + 139k spoof
+  - ~14.4 GB
 
-- Testing: CATI-FAS
-  - Size: 40.83 GB
-  - Images: 18K images (2K live + 16K spoof)
-  - Rationale: Dataset lớn thứ 2, tỷ lệ live:spoof chênh lệch cao (1:8)
+## Protocol 2: Multi-Scale Training
 
-## Protocol 2: Multi-Domain Training
+Testing model performance on mixed large and medium-scale datasets
 
-- Training: CelebA-Spoof (50%) + NUAAA
-  - Size: ~36.5 GB
-  - Images: ~249K CelebA + 12.6K NUAAA
-  - Rationale: Kết hợp dataset lớn và dataset cân bằng
+- **Training**:
+  - CelebA-Spoof (30%): ~160k samples (~21.7 GB)
+  - CATI-FAS (60%): ~21.6k samples (~24.5 GB)
+- **Validation**:
+  - CelebA-Spoof (10%): ~53k samples (~7.2 GB)
+  - CATI-FAS (20%): ~7.2k samples (~8.2 GB)
+- **Testing**:
+  - CelebA-Spoof (10%): ~53k samples (~7.2 GB)
+  - CATI-FAS (20%): ~7.2k samples (~8.2 GB)
 
-- Validation: LCC-FASD
-  - Size: 936.8 MB
-  - Images: 2.9K images (223 live + 2.6K spoof)
+## Protocol 3: Cross-Dataset Evaluation
 
-- Testing: CATI-FAS
-  - Size: 40.83 GB
-  - Images: 18K images (2K live + 16K spoof)
+Testing generalization across multiple medium-scale datasets
 
-## Protocol 3: Balanced Training
+- **Training**:
+  - CATI-FAS (80%): ~28.8k samples (~32.7 GB)
+  - Zalo-AIC (60%): ~6.2k samples (~678 MB)
+- **Validation**:
+  - CATI-FAS (20%): ~7.2k samples (~8.2 GB)
+  - Zalo-AIC (40%): ~4.1k samples (~452 MB)
+- **Testing**:
+  - LCC-FASD (30%): ~1.7k samples (~281 MB)
+  - NUAAA (30%): ~7.6k samples (~117 MB)
 
-- Training: NUAAA + Zalo-AIC (90% split)
-  - Size: ~1.4 GB
-  - Images: ~16K images
-  - Rationale: Các dataset nhỏ hơn nhưng cân bằng về tỷ lệ live:spoof
+## Protocol 4: Domain Generalization
 
-- Validation: Zalo-AIC (10% split)
-  - Size: ~113 MB
-  - Images: ~1K images
+Testing generalization from medium to large-scale domains
 
-- Testing: CATI-FAS
-  - Size: 40.83 GB  
-  - Images: 18K images
-
-## Protocol 4: Cross-Domain Testing
-
-- Training: CelebA-Spoof + NUAAA + LCC-FASD
-  - Size: ~73.5 GB
-  - Images: ~484K images
-  - Rationale: Huấn luyện trên nhiều domain khác nhau
-
-- Validation: CelebA-Spoof validation split
-  - Size: ~7.2 GB
-  - Images: ~53K images
-
-- Testing: Zalo-AIC
-  - Size: 1.13 GB
-  - Images: 5.2K images (2.6K live + 2.5K spoof)
-  - Rationale: Test khả năng tổng quát hóa trên domain hoàn toàn mới
+- **Training (All Medium Datasets)**:
+  - CATI-FAS: ~36k samples (~40.83 GB)
+  - LCC-FASD: ~5.7k samples (~937 MB)
+  - NUAAA: ~25.2k samples (~391 MB)
+  - Zalo-AIC: ~10.3k samples (~1.13 GB)
+  - Total: ~77k samples
+- **Validation**:
+  - CelebA-Spoof (2.5%): ~26.5k samples (~3.6 GB)
+- **Testing**:
+  - CelebA-Spoof (2.5%): ~26.5k samples (~3.6 GB)

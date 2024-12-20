@@ -47,3 +47,4 @@ class Config:
         self.dataset_names = None
         self.protocol = None 
         self.train_ratio = None
+        self.val_test_ratio = None

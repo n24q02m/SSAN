@@ -50,29 +50,47 @@ def get_transforms(mode="train", config=None):
 def split_data(dataset_paths, config):
     """Split data according to protocol"""
     if config.protocol == "protocol_1":
+        # Single Large-Scale Dataset (CelebA-Spoof)
         train_dirs = [dataset_paths["CelebA_Spoof"]]
-        val_dirs = [dataset_paths["CelebA_Spoof"]]
-        test_dirs = [dataset_paths["CATI_FAS"]]
-        config.train_ratio = 0.9
+        val_dirs = [dataset_paths["CelebA_Spoof"]] 
+        test_dirs = [dataset_paths["CelebA_Spoof"]]
+        config.train_ratio = 0.6  # 60% train, 20% val, 20% test
 
     elif config.protocol == "protocol_2":
-        train_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["NUAAA"]]
-        val_dirs = [dataset_paths["LCC_FASD"]]
-        test_dirs = [dataset_paths["CATI_FAS"]]
-        config.train_ratio = 0.8
+        # Multi-Scale Training (CelebA-Spoof + CATI-FAS)
+        train_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["CATI_FAS"]]
+        val_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["CATI_FAS"]]
+        test_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["CATI_FAS"]]
+        # CelebA-Spoof: 30%(train)/10%(val)/10%(test)
+        # CATI-FAS: 60%(train)/20%(val)/20%(test)
+        config.train_ratio = {
+            "CelebA_Spoof": 0.6,  # 30% of total = 60% of 50%
+            "CATI_FAS": 0.6       # 60% of total
+        }
 
     elif config.protocol == "protocol_3":
-        train_dirs = [dataset_paths["NUAAA"], dataset_paths["Zalo_AIC"]]
-        val_dirs = [dataset_paths["Zalo_AIC"]]
-        test_dirs = [dataset_paths["CATI_FAS"]]
-        config.train_ratio = 0.9
+        # Cross-Dataset Evaluation
+        train_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]]
+        val_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]]
+        test_dirs = [dataset_paths["LCC_FASD"], dataset_paths["NUAAA"]]
+        # CATI-FAS: 80%(train)/20%(val)
+        # Zalo-AIC: 60%(train)/40%(val)
+        # LCC-FASD, NUAAA: 30%(test)
+        config.train_ratio = {
+            "CATI_FAS": 0.8,
+            "Zalo_AIC": 0.6
+        }
 
     elif config.protocol == "protocol_4":
-        train_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["NUAAA"], 
-                     dataset_paths["LCC_FASD"]]
+        # Domain Generalization
+        train_dirs = [dataset_paths["CATI_FAS"], dataset_paths["LCC_FASD"],
+                     dataset_paths["NUAAA"], dataset_paths["Zalo_AIC"]]
         val_dirs = [dataset_paths["CelebA_Spoof"]]
-        test_dirs = [dataset_paths["Zalo_AIC"]]
-        config.train_ratio = 0.8
+        test_dirs = [dataset_paths["CelebA_Spoof"]]
+        # All medium datasets for training
+        # CelebA-Spoof: 2.5%(val)/2.5%(test)
+        config.train_ratio = 1.0  # Use all data for training
+        config.val_test_ratio = 0.025  # 2.5% for val/test each
 
     else:
         raise ValueError(f"Invalid protocol: {config.protocol}")
@@ -80,7 +98,6 @@ def split_data(dataset_paths, config):
     return train_dirs, val_dirs, test_dirs
 
 def create_protocol_data(protocol, dataset_paths, config):
-    """Create data for a single protocol"""
     print(f"\nCreating {protocol} splits...")
     config.protocol = protocol
     train_dirs, val_dirs, test_dirs = split_data(dataset_paths, config)
@@ -98,7 +115,6 @@ def create_protocol_data(protocol, dataset_paths, config):
             else:
                 dataset_name = dataset_name.replace("_dataset", "")
             
-            # Sử dụng list comprehension thay vì loop
             for folder, label in [("live", 1), ("spoof", 0)]:
                 folder_dir = Path(data_dir) / folder
                 data.extend([
@@ -116,7 +132,17 @@ def create_protocol_data(protocol, dataset_paths, config):
     
     # Train/val split
     if "train" in all_data:
-        train_df = all_data["train"].sample(frac=config.train_ratio, random_state=config.seed)
+        if isinstance(config.train_ratio, dict):
+            # Handle per-dataset ratios
+            train_dfs = []
+            for dataset_name, ratio in config.train_ratio.items():
+                dataset_df = all_data["train"][all_data["train"]["dataset"] == dataset_name]
+                train_dfs.append(dataset_df.sample(frac=ratio, random_state=config.seed))
+            train_df = pd.concat(train_dfs)
+        else:
+            # Use global ratio
+            train_df = all_data["train"].sample(frac=config.train_ratio, random_state=config.seed)
+            
         train_df.to_csv(protocol_dir / "train.csv", index=False)
         print(f"Created train.csv with {len(train_df)} samples")
 
