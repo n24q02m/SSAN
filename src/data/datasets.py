@@ -16,7 +16,6 @@ from functools import partial
 from torch.utils.data import DataLoader, Dataset
 from prefetch_generator import BackgroundGenerator
 
-
 from src.config import Config
 
 def get_transforms(mode="train", config=None):
