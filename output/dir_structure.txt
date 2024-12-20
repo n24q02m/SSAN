@@ -1,4 +1,12 @@
 └── SSAN_Enhance/
+    ├── .pytest_cache/
+    │   ├── v/
+    │   │   └── cache/
+    │   │       ├── lastfailed/
+    │   │       ├── nodeids/
+    │   │       └── stepwise/
+    │   ├── CACHEDIR.TAG/
+    │   └── README.md/
     ├── data/
     │   ├── CATI_FAS_dataset/
     │   │   ├── live/
@@ -162,7 +170,29 @@
     │   │   ├── __init__.py/
     │   │   └── datasets.py/
     │   ├── model/
-    │   │   └── __init__.py/
+    │   │   ├── __pycache__/
+    │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   ├── components.cpython-310.pyc/
+    │   │   │   ├── losses.cpython-310.pyc/
+    │   │   │   └── ssan.cpython-310.pyc/
+    │   │   ├── __init__.py/
+    │   │   ├── components.py/
+    │   │   ├── losses.py/
+    │   │   └── ssan.py/
+    │   ├── runner/
+    │   │   ├── __pycache__/
+    │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   └── trainer.cpython-310.pyc/
+    │   │   ├── __init__.py/
+    │   │   └── trainer.py/
+    │   ├── tests/
+    │   │   ├── __pycache__/
+    │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   ├── test_ssan.cpython-310-pytest-8.3.4.pyc/
+    │   │   │   └── test_trainer.cpython-310-pytest-8.3.4.pyc/
+    │   │   ├── __init__.py/
+    │   │   ├── test_ssan.py/
+    │   │   └── test_trainer.py/
     │   ├── utils/
     │   │   ├── __init__.py/
     │   │   ├── dir_structure.py/
@@ -198,6 +228,12 @@
     │   │   ├── __init__.py/
     │   │   └── lr_scheduler.py/
     │   ├── transformers/
+    │   │   ├── __pycache__/
+    │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   ├── __init__.cpython-312.pyc/
+    │   │   │   ├── transformer_test.cpython-310-pytest-8.3.4.pyc/
+    │   │   │   ├── transformer_train.cpython-310.pyc/
+    │   │   │   └── transformer_train.cpython-312.pyc/
     │   │   ├── __init__.py/
     │   │   ├── transformer_test.py/
     │   │   └── transformer_train.py/
@@ -207,6 +243,7 @@
     │   ├── LICENSE/
     │   ├── README.md/
     │   └── solver.py/
+    ├── tests/
     ├── .env/
     ├── README.md/
     └── requirements.txt/
