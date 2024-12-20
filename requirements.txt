@@ -8,3 +8,4 @@ matplotlib
 onnxruntime-gpu
 insightface
 prefetch_generator
+pytest
