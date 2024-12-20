@@ -72,16 +72,17 @@ class TestTrainer:
         )
 
     def _create_mock_dataloader(self):
-        """Create a mock dataloader"""
-        # Create single batch of data (not nested)
-        dataset = [(
-            torch.randn(3, self.img_size, self.img_size),  # Change shape to [C,H,W]
-            torch.randn(1, 32, 32),
-            torch.tensor(0).long(),  # Single label
-            torch.tensor(0).long()   # Single domain
-        )] * 8  # 8 samples 
-        
-        # Create proper BatchSampler
+        """Create a mock dataloader with balanced labels"""
+        # Create balanced dataset with both positive and negative samples 
+        dataset = []
+        for i in range(8):  # 8 samples total
+            dataset.append((
+                torch.randn(3, self.img_size, self.img_size),  # Image
+                torch.randn(1, 32, 32),  # Depth map
+                torch.tensor(i % 2).long(),  # Alternate between 0 and 1 labels
+                torch.randint(0, self.num_domains, ()).long()  # Random domain - Changed to create scalar
+            ))
+            
         return torch.utils.data.DataLoader(
             dataset,
             batch_size=self.batch_size,
