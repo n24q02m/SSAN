@@ -1,5 +1,8 @@
 import os
 import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
 import pytest
 import torch
 import torch.nn as nn
@@ -70,14 +73,22 @@ class TestTrainer:
 
     def _create_mock_dataloader(self):
         """Create a mock dataloader"""
+        # Create single batch of data (not nested)
         dataset = [(
-            torch.randn(self.batch_size, 3, self.img_size, self.img_size),
-            torch.randn(self.batch_size, 1, 32, 32),
-            torch.randint(0, 2, (self.batch_size,)),
-            torch.randint(0, self.num_domains, (self.batch_size,))
-        )] * 2  # 2 batches for testing
-        return torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
-
+            torch.randn(3, self.img_size, self.img_size),  # Change shape to [C,H,W]
+            torch.randn(1, 32, 32),
+            torch.tensor(0).long(),  # Single label
+            torch.tensor(0).long()   # Single domain
+        )] * 8  # 8 samples 
+        
+        # Create proper BatchSampler
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0
+        )
+    
     def test_init(self, setup):
         """Test trainer initialization"""
         assert isinstance(self.trainer.model, SSAN)
