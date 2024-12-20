@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 from pathlib import Path
@@ -76,6 +77,176 @@ class Trainer:
         self.setup_directories()
         self.setup_logging()
 
+    def _init_metrics(self) -> Dict[str, float]:
+        """Initialize metrics dictionary"""
+        return {
+            'loss': 0.0,
+            'cls_loss': 0.0,  
+            'domain_loss': 0.0,
+            'contrast_loss': 0.0,
+            'accuracy': 0.0,
+            'count': 0
+        }
+
+    def _compute_losses(self, pred, domain_pred, labels, domains, feat_orig, feat_style, contrast_labels) -> Dict[str, Any]:
+        """Compute all losses
+        
+        Returns:
+            Dictionary containing total loss tensor and individual loss values
+        """
+        cls_loss = self.criterion['cls'](pred, labels)
+        domain_loss = self.criterion['domain'](domain_pred, domains) 
+        contrast_loss = self.criterion['contrast'](feat_orig, feat_style, contrast_labels)
+        
+        total_loss = cls_loss + \
+                    self.config.lambda_adv * domain_loss + \
+                    self.config.lambda_contrast * contrast_loss
+
+        return {
+            'total': total_loss,  # Keep tensor for backprop
+            'cls_loss': cls_loss.item(),
+            'domain_loss': domain_loss.item(), 
+            'contrast_loss': contrast_loss.item()
+        }
+
+    def _compute_accuracy(self, pred, labels) -> float:
+        """Compute classification accuracy"""
+        # Fix: Use sigmoid and threshold for binary classification
+        pred_cls = (torch.sigmoid(pred) > 0.5).float() 
+        return (pred_cls == labels).float().mean().item()
+
+    def _update_metrics(self, metrics: Dict[str, float], batch_metrics: Dict[str, float]) -> None:
+        """Update running metrics with batch metrics"""
+        for k in metrics:
+            if k != 'count':
+                metrics[k] += batch_metrics.get(k, 0.0)
+        metrics['count'] += 1
+
+    def _finalize_metrics(self, metrics: Dict[str, float]) -> Dict[str, float]:
+        """Calculate final average metrics"""
+        count = metrics.pop('count')
+        return {k: v/count for k, v in metrics.items()}
+
+    def _update_progress(self, pbar, metrics: Dict[str, float]) -> None:
+        """Update progress bar with current metrics"""
+        avg_metrics = {k: v/metrics['count'] for k, v in metrics.items() if k != 'count'}
+        pbar.set_postfix(avg_metrics)
+
+    def _eval_step(self, batch) -> tuple:
+        """Execute one evaluation step"""
+        images, depth_maps, labels, domains = batch
+        
+        images = images.to(self.device)  # [B,C,H,W]  
+        labels = labels.to(self.device)  # [B]
+
+        with torch.no_grad():
+            pred, _ = self.model(images)  # Forward without domain adversarial
+            # Fix: Flatten prediction to match label shape 
+            pred = pred.view(pred.size(0), -1).mean(dim=1)  # [B]
+            scores = torch.sigmoid(pred)  # Use sigmoid for binary classification
+            return labels.cpu(), scores.cpu()
+
+    def calculate_metrics(self, labels: np.ndarray, scores: np.ndarray) -> Dict[str, float]:
+        """Calculate evaluation metrics"""
+        from sklearn.metrics import roc_auc_score, roc_curve
+        
+        # Calculate AUC
+        auc = roc_auc_score(labels, scores)
+        
+        # Calculate TPR at specific FPR thresholds
+        fpr, tpr, thresholds = roc_curve(labels, scores)
+        
+        # Find TPR at FPR=0.01
+        idx_01 = np.argmin(np.abs(fpr - 0.01))
+        tpr_at_fpr01 = tpr[idx_01]
+        
+        # Find FPR at TPR=0.99
+        idx_99 = np.argmin(np.abs(tpr - 0.99))
+        fpr_at_tpr99 = fpr[idx_99]
+        
+        # Calculate accuracy at best threshold
+        best_thresh_idx = np.argmax(tpr - fpr)
+        accuracy = np.mean((scores >= thresholds[best_thresh_idx]) == labels)
+
+        return {
+            'auc': auc,
+            'accuracy': accuracy,
+            'tpr@fpr=0.01': tpr_at_fpr01,
+            'fpr@tpr=0.99': fpr_at_tpr99
+        }
+
+    def _save_checkpoints(self, epoch: int, metrics: Dict[str, float]) -> None:
+        """Save model checkpoints"""
+        # Save latest checkpoint
+        latest_path = self.ckpt_dir / 'latest.pth'
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'metrics': metrics
+        }, latest_path)
+
+    def _log_metrics(self, mode: str, epoch: int, metrics: Dict[str, float]) -> None:
+        """Log training/validation metrics
+        
+        Args:
+            mode: 'train' or 'val'
+            epoch: Current epoch number
+            metrics: Dictionary of metrics to log
+        """
+        # Log to file/console
+        metric_str = ' '.join([f'{k}={v:.4f}' for k, v in metrics.items()])
+        self.logger.info(f'Epoch {epoch+1} {mode}: {metric_str}')
+        
+        # Update best metrics if validation
+        if mode == 'val':
+            current_metric = metrics.get('accuracy', 0)
+            if current_metric > self.best_metrics['accuracy']:
+                self.best_metrics.update({
+                    'epoch': epoch,
+                    'accuracy': current_metric,
+                    'auc': metrics.get('auc', 0),
+                    'loss': metrics.get('loss', float('inf')),
+                    'tpr@fpr=0.1': metrics.get('tpr@fpr=0.01', 0),
+                    'hter': metrics.get('hter', 1.0)
+                })
+
+    def _log_final_results(self, metrics: Dict[str, float]) -> None:
+        """Log final evaluation results
+        
+        Args:
+            metrics: Dictionary of final metrics
+        """
+        # Log final metrics
+        metric_str = ' '.join([f'{k}={v:.4f}' for k, v in metrics.items()])
+        self.logger.info(f'Final test results: {metric_str}')
+        
+        # Log best metrics
+        best_str = ' '.join([f'{k}={v:.4f}' for k, v in self.best_metrics.items()])
+        self.logger.info(f'Best validation metrics: {best_str}')
+
+    def _check_early_stopping(self, val_loss: float) -> bool:
+        """Check if training should stop early
+        
+        Args:
+            val_loss: Current validation loss
+            
+        Returns:
+            True if training should stop, False otherwise
+        """
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
+            self.early_stopping_counter = 0
+        else:
+            self.early_stopping_counter += 1
+            
+        if self.early_stopping_counter >= self.patience:
+            self.should_stop = True
+            self.logger.info(f'Early stopping triggered after {self.patience} epochs without improvement')
+            
+        return self.should_stop
+
     def setup_directories(self) -> None:
         """Create necessary directories"""
         self.output_dir = Path(self.config.output_dir)
@@ -137,32 +308,41 @@ class Trainer:
             raise
 
     def _train_step(self, batch) -> Dict[str, float]:
-        """Execute one training step
+        """Execute one training step"""
+        # Unpack and reshape batch correctly
+        images, depth_maps, labels, domains = batch
         
-        Args:
-            batch: Current batch data
-            
-        Returns:
-            Dictionary containing batch metrics
-        """
-        images, depth_maps, labels, domains = [x.to(self.device) for x in batch]
+        images = images.to(self.device)  # [B,C,H,W]
+        depth_maps = depth_maps.to(self.device)  # [B,1,H,W] 
+        labels = labels.to(self.device)  # [B]
+        domains = domains.to(self.device)  # [B]
 
         # Mixed precision forward pass
-        with autocast():
+        with autocast(device_type='cuda' if self.device=='cuda' else 'cpu'):
             pred, domain_pred, feat_orig, feat_style, contrast_labels = \
                 self.model.shuffle_style_assembly(images, labels, domains, self.lambda_val)
-
+            
+            # Fix: Average spatial dimensions for prediction
+            pred = F.adaptive_avg_pool2d(pred, 1).squeeze(-1).squeeze(-1)  # [B]
+            
             losses = self._compute_losses(pred, domain_pred, labels, domains,
-                                       feat_orig, feat_style, contrast_labels)
+                                        feat_orig, feat_style, contrast_labels)
 
-        # Optimize
+        # Optimize using raw tensor loss
         self.optimizer.zero_grad()
         self.scaler.scale(losses['total']).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
 
-        return {**losses, 'accuracy': self._compute_accuracy(pred, labels)}
-
+        # Return loss values for metrics
+        return {
+            'total': losses['total'].item(),
+            'cls_loss': losses['cls_loss'],
+            'domain_loss': losses['domain_loss'],
+            'contrast_loss': losses['contrast_loss'],
+            'accuracy': self._compute_accuracy(pred, labels)
+        }
+    
     def evaluate(self, loader: torch.utils.data.DataLoader, mode: str = 'val') -> Dict[str, float]:
         """Evaluate model on given data loader
         

@@ -23,14 +23,18 @@ class ContrastiveLoss(nn.Module):
     def forward(self, anchor_feat, positive_feat, labels):
         """
         Args:
-            anchor_feat: Original features (B, C)
-            positive_feat: Shuffled style features (B, C)
-            labels: Binary labels (B,) indicating same class (1) or different (-1)
+            anchor_feat: Original features (B, C, H, W)
+            positive_feat: Shuffled style features (B, C, H, W) 
+            labels: Binary labels (B,) with 1=same class, -1=different class
         """
         # Stop gradient for anchor features
         anchor_feat = anchor_feat.detach()
         
-        # Normalize features 
+        # Global average pooling to get feature vectors
+        anchor_feat = F.adaptive_avg_pool2d(anchor_feat, 1).squeeze(-1).squeeze(-1)  # [B,C]
+        positive_feat = F.adaptive_avg_pool2d(positive_feat, 1).squeeze(-1).squeeze(-1)  # [B,C]
+        
+        # Normalize features
         anchor_feat = F.normalize(anchor_feat, p=2, dim=1)
         positive_feat = F.normalize(positive_feat, p=2, dim=1)
         
