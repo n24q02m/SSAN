@@ -31,7 +31,10 @@ class TestComponents:
         
         # Check output shapes
         assert final_feat.shape == (batch_size, 256, height//16, width//16)
-        assert len(scale_feats) == 3  # 3 scale features
+        assert len(scale_feats) == 3
+        assert scale_feats[0].shape == (batch_size, 128, height//2, width//2)
+        assert scale_feats[1].shape == (batch_size, 128, height//4, width//4)
+        assert scale_feats[2].shape == (batch_size, 128, height//8, width//8)
         
     def test_content_extractor(self):
         batch_size = 4
@@ -62,22 +65,35 @@ class TestComponents:
         gamma, beta = model(feat_scales)
         assert gamma.shape == (batch_size, 256)
         assert beta.shape == (batch_size, 256)
+        
+    def test_adain(self):
+        batch_size = 4
+        channels = 256
+        height = 16
+        width = 16
+        
+        model = AdaIN()
+        content = torch.randn(batch_size, channels, height, width)
+        gamma = torch.randn(batch_size, channels)
+        beta = torch.randn(batch_size, channels)
+        
+        out = model(content, gamma, beta)
+        assert out.shape == (batch_size, channels, height, width)
 
 class TestLosses:
     def test_classification_loss(self):
         batch_size = 4
-        num_classes = 2
         
         criterion = ClassificationLoss()
-        pred = torch.randn(batch_size, num_classes)
-        target = torch.randint(0, num_classes, (batch_size,))
+        pred = torch.randn(batch_size, 1)
+        target = torch.randint(0, 2, (batch_size,))
         
         loss = criterion(pred, target)
         assert isinstance(loss.item(), float)
         
     def test_contrastive_loss(self):
         batch_size = 4
-        feat_dim = 256
+        feat_dim = 512
         
         criterion = ContrastiveLoss()
         anchor = torch.randn(batch_size, feat_dim)
@@ -111,16 +127,16 @@ class TestSSAN:
         domain_labels = torch.randint(0, num_domains, (batch_size,))
         
         # Test normal forward
-        pred, domain_pred = model(x, domain_labels)
-        assert pred.shape == (batch_size, 1, height//16, width//16)
+        pred, domain_pred = model(x, domain_labels, lambda_val=1.0)
+        assert pred.shape == (batch_size, 1, height//4, width//4)
         assert domain_pred.shape == (batch_size, num_domains)
         
-        # Test forward with feature return
-        pred, domain_pred, feats = model(x, domain_labels, return_feats=True)
+        # Test forward with feature return 
+        pred, domain_pred, feats = model(x, domain_labels, return_feats=True, lambda_val=1.0)
         assert 'content_feat' in feats
         assert 'style_feat' in feats
-        assert 'gamma' in feats
-        assert 'beta' in feats
+        assert 'gamma' in feats and feats['gamma'].shape == (batch_size, 256) 
+        assert 'beta' in feats and feats['beta'].shape == (batch_size, 256)
         
     def test_shuffle_style_assembly(self):
         batch_size = 4
@@ -131,14 +147,18 @@ class TestSSAN:
         
         model = SSAN(num_domains=num_domains)
         x = torch.randn(batch_size, channels, height, width)
+        live_spoof_labels = torch.randint(0, 2, (batch_size,))
         domain_labels = torch.randint(0, num_domains, (batch_size,))
         
-        pred, domain_pred, feat_orig, feat_style, contrast_labels = model.shuffle_style_assembly(x, domain_labels)
+        pred, domain_pred, feat_orig, feat_style, contrast_labels = model.shuffle_style_assembly(
+            x, live_spoof_labels, domain_labels, lambda_val=1.0
+        )
         
-        assert pred.shape == (batch_size, 1, height//16, width//16)
+        assert pred.shape == (batch_size, 1, height//4, width//4)
         assert domain_pred.shape == (batch_size, num_domains)
-        assert feat_orig.shape == feat_style.shape
+        assert feat_orig.shape == feat_style.shape == (batch_size, 512, height//32, width//32)
         assert contrast_labels.shape == (batch_size,)
+        assert torch.all(torch.abs(contrast_labels) == 1)  # Labels should be -1 or 1
 
 if __name__ == '__main__':
     pytest.main([__file__])

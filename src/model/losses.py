@@ -5,15 +5,15 @@ class ClassificationLoss(nn.Module):
     """Binary cross entropy loss for live/spoof classification"""
     def __init__(self):
         super().__init__()
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.BCEWithLogitsLoss()
         
     def forward(self, pred, target):
         """
         Args:
-            pred: Model predictions (B, 2) 
-            target: Ground truth labels (B,) with 0=spoof, 1=live
+            pred: Model predictions (B, 1) 
+            target: Binary labels (B,) with 0=spoof, 1=live
         """
-        return self.criterion(pred, target)
+        return self.criterion(pred.squeeze(), target.float())
 
 class ContrastiveLoss(nn.Module):
     """Contrastive loss between stylized features"""
@@ -24,21 +24,21 @@ class ContrastiveLoss(nn.Module):
         """
         Args:
             anchor_feat: Original features (B, C)
-            positive_feat: Shuffled style features (B, C) 
+            positive_feat: Shuffled style features (B, C)
             labels: Binary labels (B,) indicating same class (1) or different (-1)
         """
-        # Normalize features
+        # Stop gradient for anchor features
+        anchor_feat = anchor_feat.detach()
+        
+        # Normalize features 
         anchor_feat = F.normalize(anchor_feat, p=2, dim=1)
         positive_feat = F.normalize(positive_feat, p=2, dim=1)
         
-        # Calculate cosine similarity
+        # Cosine similarity
         similarity = F.cosine_similarity(anchor_feat, positive_feat, dim=1)
         
-        # Convert labels to float
-        labels = labels.float()
-        
-        # Calculate loss: pull same class features together, push different class features apart
-        loss = -(similarity * labels)
+        # Contrastive loss
+        loss = -(similarity * labels.float())
         
         return loss.mean()
 
@@ -66,7 +66,7 @@ class SSANLoss(nn.Module):
         self.lambda1 = lambda1
         self.lambda2 = lambda2
         
-    def forward(self, cls_pred, feat_orig, feat_style, contrast_labels, domain_pred, domain_target):
+    def forward(self, cls_pred, feat_orig, feat_style, contrast_labels, domain_pred, live_spoof_labels, domain_labels):
         """
         Args:
             cls_pred: Live/spoof predictions
@@ -76,20 +76,20 @@ class SSANLoss(nn.Module):
             domain_pred: Domain predictions
             domain_target: Domain labels
         """
-        # Classification loss
-        cls_loss = self.cls_criterion(cls_pred, domain_target)
+        # Classification loss using live/spoof labels
+        cls_loss = self.cls_criterion(cls_pred, live_spoof_labels)
         
         # Contrastive loss
         contrast_loss = self.contrast_criterion(feat_orig, feat_style, contrast_labels)
         
-        # Domain adversarial loss  
-        domain_loss = self.domain_criterion(domain_pred, domain_target)
+        # Domain adversarial loss
+        domain_loss = self.domain_criterion(domain_pred, domain_labels)
         
         # Total loss
         total_loss = cls_loss + self.lambda1 * contrast_loss + self.lambda2 * domain_loss
         
         return total_loss, {
             'cls_loss': cls_loss,
-            'contrast_loss': contrast_loss,
+            'contrast_loss': contrast_loss, 
             'domain_loss': domain_loss
         }

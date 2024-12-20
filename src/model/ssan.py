@@ -42,12 +42,13 @@ class SSAN(nn.Module):
         # Domain discriminator
         self.domain_disc = DomainDiscriminator(num_domains, max_iter)
 
-    def forward(self, x, domain_labels=None, return_feats=False):
+    def forward(self, x, domain_labels=None, return_feats=False, lambda_val=1.0):
         """
         Args:
             x: Input images (B, C, H, W)
             domain_labels: Domain labels for discriminator (B,)
             return_feats: Whether to return intermediate features
+            lambda_val: Gradient reversal scaling factor
         """
         # Extract multi-scale features
         feat_final, feat_scales = self.feature_gen(x)
@@ -71,7 +72,7 @@ class SSAN(nn.Module):
 
         # Domain discrimination
         if domain_labels is not None:
-            domain_pred = self.domain_disc(style_feat)
+            domain_pred = self.domain_disc(style_feat, lambda_val)
         else:
             domain_pred = None
 
@@ -85,23 +86,26 @@ class SSAN(nn.Module):
         
         return live_spoof_pred, domain_pred
 
-    def shuffle_style_assembly(self, x, domain_labels=None):
-        """Forward pass with shuffled style features for contrastive learning"""
-        # Get batch size
+    def shuffle_style_assembly(self, x, live_spoof_labels, domain_labels, lambda_val=1.0):
+        """Forward pass with shuffled style features for contrastive learning
+        Args:
+            x: Input images (B, C, H, W)
+            live_spoof_labels: Binary labels for live/spoof (B,)
+            domain_labels: Domain labels (B,)
+        """
         batch_size = x.size(0)
         
         # Random permutation for style shuffling
-        rand_idx = torch.randperm(batch_size)
+        rand_idx = torch.randperm(batch_size) 
         x_shuffled = x[rand_idx]
-
-        # Get predictions and features for original images
-        pred_orig, domain_pred, feats_orig = self.forward(x, domain_labels, return_feats=True)
-
-        # Get predictions and features for shuffled images 
-        _, _, feats_shuffled = self.forward(x_shuffled, domain_labels, return_feats=True)
-
-        # Create contrastive labels (1 if same class, -1 if different)
-        contrast_labels = (domain_labels == domain_labels[rand_idx]).long() 
+        labels_shuffled = live_spoof_labels[rand_idx]
+        
+        # Forward passes
+        pred_orig, domain_pred, feats_orig = self.forward(x, domain_labels, return_feats=True, lambda_val=lambda_val)
+        _, _, feats_shuffled = self.forward(x_shuffled, domain_labels[rand_idx], return_feats=True, lambda_val=lambda_val)
+        
+        # Create contrast labels based on live/spoof labels
+        contrast_labels = (live_spoof_labels == labels_shuffled).long()
         contrast_labels = torch.where(contrast_labels == 1, 1, -1)
-
+        
         return pred_orig, domain_pred, feats_orig['style_feat'], feats_shuffled['style_feat'], contrast_labels

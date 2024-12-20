@@ -72,7 +72,6 @@ class FeatureGenerator(nn.Module):
         return x4, [x1, x2, x3] # Return final features and intermediate features
 
 class ContentExtractor(nn.Module):
-    """Content feature extractor with gradient reversal layer"""
     def __init__(self, in_channels=256):
         super().__init__()
         self.conv = nn.Sequential(
@@ -80,14 +79,14 @@ class ContentExtractor(nn.Module):
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 256, 3, padding=1, bias=False),
-            nn.BatchNorm2d(256) 
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True)
         )
         
     def forward(self, x):
         return self.conv(x)
 
 class StyleExtractor(nn.Module):
-    """Style feature extractor using Instance Normalization"""
     def __init__(self):
         super().__init__()
         self.ada_conv1 = nn.Sequential(
@@ -96,7 +95,7 @@ class StyleExtractor(nn.Module):
             nn.ReLU(inplace=True)
         )
         
-        self.ada_conv2 = nn.Sequential( 
+        self.ada_conv2 = nn.Sequential(
             nn.Conv2d(128, 128, 3, stride=2, padding=1, bias=False),
             nn.InstanceNorm2d(128),
             nn.ReLU(inplace=True)
@@ -104,7 +103,8 @@ class StyleExtractor(nn.Module):
         
         self.ada_conv3 = nn.Sequential(
             nn.Conv2d(128, 256, 3, stride=2, padding=1, bias=False),
-            nn.InstanceNorm2d(256)
+            nn.InstanceNorm2d(256),
+            nn.ReLU(inplace=True)
         )
         
         self.fc = nn.Sequential(
@@ -151,50 +151,49 @@ class Classifier(nn.Module):
     def __init__(self, in_channels=512):
         super().__init__()
         self.decoder = nn.Sequential(
-            nn.Upsample(scale_factor=2, mode='bilinear'),
+            nn.Upsample(scale_factor=4, mode='bilinear'),
             nn.Conv2d(in_channels, 128, 3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             
-            nn.Conv2d(128, 1, 3, padding=1, bias=False),
-            nn.ReLU(inplace=True)
+            nn.Upsample(scale_factor=2, mode='bilinear'),
+            nn.Conv2d(128, 64, 3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            
+            nn.Conv2d(64, 1, 3, padding=1, bias=False)
         )
 
     def forward(self, x):
         return self.decoder(x)
 
 class DomainDiscriminator(nn.Module):
-    def __init__(self, num_domains, max_iter=4000):
+    def __init__(self, num_domains, max_iter=4000): 
         super().__init__()
         self.grl = GradientReversalLayer(max_iter)
         
         self.conv = nn.Sequential(
-            # First conv block with stride=2
             nn.Conv2d(512, 256, 3, stride=2, padding=1),
             nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU(inplace=True),
             
-            # Second conv block with stride=2
-            nn.Conv2d(256, 512, 3, stride=2, padding=1), 
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2, inplace=True),
-            
-            # Additional downsampling
-            nn.Conv2d(512, 512, 3, stride=2, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(256, 512, 3, stride=2, padding=1),
+            nn.BatchNorm2d(512), 
+            nn.ReLU(inplace=True),
             
             nn.AdaptiveAvgPool2d(1)
         )
         
-        self.fc = nn.Linear(512, num_domains)
+        self.fc = nn.Sequential(
+            nn.Linear(512, num_domains),
+            nn.ReLU(inplace=True)
+        )
 
-    def forward(self, x):
-        x = self.grl(x)
+    def forward(self, x, lambda_val):
+        x = self.grl(x) * lambda_val
         x = self.conv(x)
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+        return self.fc(x)
 
 class GradientReversalLayer(nn.Module):
     """Gradient reversal layer"""
