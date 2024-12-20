@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 class FeatureGenerator(nn.Module):
@@ -147,21 +148,15 @@ class AdaIN(nn.Module):
         return x
 
 class Classifier(nn.Module):
-    """Binary classifier for live/spoof"""
-    def __init__(self, in_channels=256):
+    def __init__(self, in_channels=512):
         super().__init__()
         self.decoder = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear'),
             nn.Conv2d(in_channels, 128, 3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-
-            nn.Upsample(scale_factor=2, mode='bilinear'),
-            nn.Conv2d(128, 64, 3, padding=1, bias=False),
-            nn.BatchNorm2d(64), 
-            nn.ReLU(inplace=True),
-
-            nn.Conv2d(64, 1, 3, padding=1, bias=False),
+            
+            nn.Conv2d(128, 1, 3, padding=1, bias=False),
             nn.ReLU(inplace=True)
         )
 
@@ -169,24 +164,30 @@ class Classifier(nn.Module):
         return self.decoder(x)
 
 class DomainDiscriminator(nn.Module):
-    """Domain discriminator with gradient reversal"""
-    def __init__(self, max_iter=4000):
+    def __init__(self, num_domains, max_iter=4000):
         super().__init__()
         self.grl = GradientReversalLayer(max_iter)
         
         self.conv = nn.Sequential(
-            nn.Conv2d(256, 256, 3, stride=2, padding=1),
+            # First conv block with stride=2
+            nn.Conv2d(512, 256, 3, stride=2, padding=1),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, inplace=True),
             
-            nn.Conv2d(256, 512, 3, stride=2, padding=1),
+            # Second conv block with stride=2
+            nn.Conv2d(256, 512, 3, stride=2, padding=1), 
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            # Additional downsampling
+            nn.Conv2d(512, 512, 3, stride=2, padding=1),
             nn.BatchNorm2d(512),
             nn.LeakyReLU(0.2, inplace=True),
             
             nn.AdaptiveAvgPool2d(1)
         )
         
-        self.fc = nn.Linear(512, 5) # 5 domains
+        self.fc = nn.Linear(512, num_domains)
 
     def forward(self, x):
         x = self.grl(x)
