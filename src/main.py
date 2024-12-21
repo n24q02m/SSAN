@@ -2,7 +2,6 @@ import argparse
 import torch
 import random
 import numpy as np
-from pathlib import Path
 
 from config import Config
 from data.datasets import get_dataloaders

@@ -1,18 +1,18 @@
 import os
 import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
 import numpy as np
 import pandas as pd
 import pytest
 import torch
 import matplotlib
-matplotlib.use('Agg')
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.runner.trainer import Trainer
 from src.model.ssan import SSAN
 from src.model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
+
+matplotlib.use('Agg')
 
 class TestTrainer:
     @pytest.fixture

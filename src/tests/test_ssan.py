@@ -1,19 +1,17 @@
 import os
 import sys
+import pytest
+import torch
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-import pytest
-import torch
-import torch.nn as nn
-
 from src.model.components import (
     FeatureGenerator, ContentExtractor, StyleExtractor,
-    AdaIN, Classifier, DomainDiscriminator
+    AdaIN
 )
 from src.model.losses import (
     ClassificationLoss, ContrastiveLoss,
-    DomainAdversarialLoss, SSANLoss
+    DomainAdversarialLoss
 )
 from src.model.ssan import SSAN
 

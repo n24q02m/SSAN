@@ -1,13 +1,12 @@
 import os
 import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
 import pytest
 import torch
 import torch.nn as nn
 from pathlib import Path
 from torch.utils.data import DataLoader
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.model.ssan import SSAN
 from src.runner.optimizers import (

@@ -1,8 +1,5 @@
 import os
 import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
 import psutil
 import torch
 import optuna
@@ -11,6 +8,8 @@ from typing import Dict, Any
 from torch.utils.data import DataLoader
 import gc
 from pathlib import Path
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
 

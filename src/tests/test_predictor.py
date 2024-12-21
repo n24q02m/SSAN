@@ -1,18 +1,18 @@
 import os
 import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
 import pandas as pd
 import pytest
 import torch
 import numpy as np
 from pathlib import Path
 import matplotlib
-matplotlib.use('Agg')
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.runner.predictor import Predictor 
 from src.model.ssan import SSAN
+
+matplotlib.use('Agg')
 
 class TestPredictor:
     @pytest.fixture

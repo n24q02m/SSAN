@@ -1,11 +1,7 @@
 import os
 import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
 import cv2
 import torch
-import numpy as np 
 import pandas as pd
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
@@ -15,6 +11,8 @@ import multiprocessing as mp
 from functools import partial
 from torch.utils.data import DataLoader, Dataset
 from prefetch_generator import BackgroundGenerator
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.config import Config
 
