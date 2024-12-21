@@ -6,7 +6,7 @@ from .components import (FeatureGenerator, ContentExtractor, StyleExtractor,
 
 class SSAN(nn.Module):
     """Shuffled Style Assembly Network (SSAN) for Face Anti-Spoofing"""
-    def __init__(self, num_domains=5, ada_blocks=2, max_iter=4000):
+    def __init__(self, num_domains=5, ada_blocks=2, max_iter=4000, dropout=0.0):
         """
         Args:
             num_domains: Number of source domains
@@ -14,7 +14,8 @@ class SSAN(nn.Module):
             max_iter: Maximum iterations for GRL
         """
         super().__init__()
-        
+        self.dropout = dropout
+
         # Base feature generator
         self.feature_gen = FeatureGenerator(input_channels=3)
 
