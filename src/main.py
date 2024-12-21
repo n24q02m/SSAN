@@ -3,13 +3,13 @@ import torch
 import random
 import numpy as np
 
-from config import Config
-from data.datasets import get_dataloaders
-from model.ssan import SSAN
-from model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
-from runner.trainer import Trainer
-from runner.predictor import Predictor
-from runner.optimizers import find_optimal_batch_size, find_optimal_workers
+from .config import Config
+from .data.datasets import get_dataloaders
+from .model.ssan import SSAN
+from .model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
+from .runner.trainer import Trainer
+from .runner.predictor import Predictor
+from .runner.optimizers import find_optimal_batch_size, find_optimal_workers
 
 def parse_args():
     parser = argparse.ArgumentParser()
