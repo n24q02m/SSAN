@@ -3,10 +3,12 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+import numpy as np
+import pandas as pd
 import pytest
 import torch
-import torch.nn as nn
-from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')
 
 from src.runner.trainer import Trainer
 from src.model.ssan import SSAN
@@ -111,33 +113,135 @@ class TestTrainer:
         assert all(isinstance(v, float) for v in metrics.values())
 
     def test_evaluate(self, setup):
-        """Test evaluation"""
+        """Test evaluation with CSV logging"""
         metrics = self.trainer.evaluate(self.val_loader, mode='val')
         
-        # Check evaluation metrics
+        # Kiểm tra metrics cơ bản
         required_metrics = ['auc', 'accuracy', 'tpr@fpr=0.01', 'fpr@tpr=0.99']
         assert all(k in metrics for k in required_metrics)
         assert all(isinstance(v, float) for v in metrics.values())
+        
+        # Kiểm tra log file
+        log_file = self.trainer.log_dir / 'training.log'
+        assert log_file.exists()
+        
+        # Kiểm tra CSV file
+        val_csv = self.trainer.csv_dir / 'val_metrics.csv'
+        if val_csv.exists():  # CSV might not exist if evaluate is called directly
+            df = pd.read_csv(val_csv)
+            assert len(df) > 0
+            for metric in required_metrics:
+                assert metric in df.columns
 
     def test_train_epoch(self, setup):
-        """Test training for one epoch"""
+        """Test training for one epoch with CSV logging"""
+        # Train một epoch
         metrics = self.trainer.train_epoch(epoch=0)
         
-        # Check training metrics
+        # Kiểm tra metrics cơ bản
         required_metrics = ['loss', 'cls_loss', 'domain_loss', 'contrast_loss']
         assert all(k in metrics for k in required_metrics)
         assert all(isinstance(v, float) for v in metrics.values())
+        
+        # Kiểm tra file CSV được tạo
+        train_csv = self.trainer.csv_dir / 'train_metrics.csv'
+        assert train_csv.exists()
+        df = pd.read_csv(train_csv)
+        assert len(df) > 0
+        for metric in required_metrics:
+            assert metric in df.columns
 
     def test_checkpoint_saving(self, setup):
-        """Test checkpoint saving and loading"""
-        # Train for 1 epoch and save
-        self.trainer.train_epoch(0)
+        """Test checkpoint saving with metrics"""
+        # Train một epoch và lưu
+        train_metrics = self.trainer.train_epoch(0)
         val_metrics = self.trainer.evaluate(self.val_loader)
         self.trainer._save_checkpoints(0, val_metrics)
 
-        # Check if checkpoint files exist
-        ckpt_path = Path(self.config.output_dir) / 'checkpoints' / self.config.run_name
-        assert (ckpt_path / 'latest.pth').exists()
+        # Kiểm tra checkpoint file
+        latest_ckpt = self.trainer.ckpt_dir / 'latest.pth'
+        assert latest_ckpt.exists()
+
+        # Load và verify checkpoint
+        ckpt = torch.load(latest_ckpt, weights_only=False)
+        assert 'epoch' in ckpt
+        assert 'model_state_dict' in ckpt
+        assert 'optimizer_state_dict' in ckpt
+        assert 'scheduler_state_dict' in ckpt
+        assert 'metrics' in ckpt
+        
+        # Verify metrics trong checkpoint
+        saved_metrics = ckpt['metrics']
+        required_metrics = ['auc', 'accuracy', 'tpr@fpr=0.01', 'fpr@tpr=0.99']
+        assert all(k in saved_metrics for k in required_metrics)
+
+    def test_save_metrics_to_csv(self, setup):
+        """Test saving metrics to CSV file"""
+        # Tạo metrics mẫu
+        test_metrics = {
+            'loss': 0.5,
+            'accuracy': 0.8,
+            'auc': 0.85,
+            'tpr@fpr=0.01': 0.7
+        }
+        
+        # Lưu metrics
+        self.trainer._save_metrics_to_csv(test_metrics, 'train', epoch=0)
+        
+        # Kiểm tra file CSV
+        csv_path = self.trainer.csv_dir / 'train_metrics.csv'
+        assert csv_path.exists()
+        
+        # Đọc và verify nội dung
+        df = pd.read_csv(csv_path)
+        for key, value in test_metrics.items():
+            assert key in df.columns
+            assert np.isclose(df[key].iloc[0], value)
+
+    def test_plot_training_curves(self, setup):
+        """Test plotting of training curves"""
+        # Tạo dữ liệu mẫu cho train và val
+        train_metrics = {'loss': 0.5, 'accuracy': 0.8, 'auc': 0.85}
+        val_metrics = {'loss': 0.4, 'accuracy': 0.85, 'auc': 0.88}
+        
+        # Lưu metrics
+        self.trainer._save_metrics_to_csv(train_metrics, 'train', epoch=0)
+        self.trainer._save_metrics_to_csv(val_metrics, 'val', epoch=0)
+        
+        # Vẽ biểu đồ
+        self.trainer._plot_training_curves()
+        
+        # Kiểm tra files được tạo
+        expected_plots = ['loss_curve.png', 'accuracy_curve.png', 'auc_curve.png']
+        for plot in expected_plots:
+            assert (self.trainer.plot_dir / plot).exists()
+
+    def test_directory_setup(self, setup):
+        """Test directory creation and structure"""
+        required_dirs = [
+            self.trainer.ckpt_dir,
+            self.trainer.log_dir,
+            self.trainer.csv_dir,
+            self.trainer.plot_dir
+        ]
+        
+        for dir_path in required_dirs:
+            assert dir_path.exists()
+            assert dir_path.is_dir()
+
+    def test_full_training_loop(self, setup):
+        """Test complete training loop with all components"""
+        # Chạy một epoch train đầy đủ
+        self.trainer.train()
+        
+        # Verify output structure
+        assert (self.trainer.csv_dir / 'train_metrics.csv').exists()
+        assert (self.trainer.csv_dir / 'val_metrics.csv').exists()
+        assert (self.trainer.plot_dir / 'loss_curve.png').exists()
+        assert (self.trainer.plot_dir / 'accuracy_curve.png').exists()
+        assert (self.trainer.plot_dir / 'auc_curve.png').exists()
+        assert (self.trainer.ckpt_dir / 'latest.pth').exists()
+        assert (self.trainer.log_dir / 'training.log').exists()
 
     @pytest.fixture(autouse=True)
     def cleanup(self):
