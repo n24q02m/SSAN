@@ -9,3 +9,4 @@ onnxruntime-gpu
 insightface
 prefetch_generator
 pytest
+seaborn
