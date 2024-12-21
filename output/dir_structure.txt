@@ -161,12 +161,18 @@
     │   ├── plans.md/
     │   └── protocols.md/
     ├── output/
+    │   ├── optimizers/
+    │   │   └── test_optimization.db/
     │   └── dir_structure.txt/
     ├── src/
     │   ├── __pycache__/
     │   │   ├── __init__.cpython-310.pyc/
-    │   │   └── config.cpython-310.pyc/
+    │   │   ├── config.cpython-310.pyc/
+    │   │   └── main.cpython-310.pyc/
     │   ├── data/
+    │   │   ├── __pycache__/
+    │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   └── datasets.cpython-310.pyc/
     │   │   ├── __init__.py/
     │   │   └── datasets.py/
     │   ├── model/
@@ -182,15 +188,27 @@
     │   ├── runner/
     │   │   ├── __pycache__/
     │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   ├── optimizers.cpython-310.pyc/
+    │   │   │   ├── predictor.cpython-310.pyc/
+    │   │   │   ├── results.cpython-310.pyc/
     │   │   │   └── trainer.cpython-310.pyc/
     │   │   ├── __init__.py/
+    │   │   ├── optimizers.py/
+    │   │   ├── predictor.py/
     │   │   └── trainer.py/
     │   ├── tests/
     │   │   ├── __pycache__/
     │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   ├── test_main.cpython-310-pytest-8.3.4.pyc/
+    │   │   │   ├── test_optimizers.cpython-310-pytest-8.3.4.pyc/
+    │   │   │   ├── test_predictor.cpython-310-pytest-8.3.4.pyc/
+    │   │   │   ├── test_results.cpython-310-pytest-8.3.4.pyc/
     │   │   │   ├── test_ssan.cpython-310-pytest-8.3.4.pyc/
     │   │   │   └── test_trainer.cpython-310-pytest-8.3.4.pyc/
     │   │   ├── __init__.py/
+    │   │   ├── test_main.py/
+    │   │   ├── test_optimizers.py/
+    │   │   ├── test_predictor.py/
     │   │   ├── test_ssan.py/
     │   │   └── test_trainer.py/
     │   ├── utils/
@@ -201,7 +219,8 @@
     │   │   ├── redetect_datasets.py/
     │   │   └── save_sample.py/
     │   ├── __init__.py/
-    │   └── config.py/
+    │   ├── config.py/
+    │   └── main.py/
     ├── SSAN/
     │   ├── configs/
     │   │   └── __init__.py/
@@ -243,7 +262,6 @@
     │   ├── LICENSE/
     │   ├── README.md/
     │   └── solver.py/
-    ├── tests/
     ├── .env/
     ├── README.md/
     └── requirements.txt/
