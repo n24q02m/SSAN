@@ -93,13 +93,15 @@ class TestLosses:
         
     def test_contrastive_loss(self):
         batch_size = 4
-        feat_dim = 512
-        
+        channels = 512
+        height = 16 
+        width = 16
+
         criterion = ContrastiveLoss()
-        anchor = torch.randn(batch_size, feat_dim)
-        positive = torch.randn(batch_size, feat_dim)
+        anchor = torch.randn(batch_size, channels, height, width) 
+        positive = torch.randn(batch_size, channels, height, width)
         labels = torch.randint(0, 2, (batch_size,)) * 2 - 1  # {-1, 1}
-        
+
         loss = criterion(anchor, positive, labels)
         assert isinstance(loss.item(), float)
         
