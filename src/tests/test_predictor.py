@@ -3,11 +3,13 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+import pandas as pd
 import pytest
 import torch
-import torch.nn as nn
 import numpy as np
 from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')
 
 from src.runner.predictor import Predictor 
 from src.model.ssan import SSAN
@@ -37,6 +39,9 @@ class TestPredictor:
         # Setup output directory
         self.output_dir = Path("tests/output/predictor")
 
+        # Ensure output directory exists
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
         # Initialize predictor
         self.predictor = Predictor(
             model=self.model,
@@ -67,7 +72,11 @@ class TestPredictor:
         """Test predictor initialization"""
         assert isinstance(self.predictor.model, SSAN)
         assert self.predictor.device == 'cpu'
-        assert self.predictor.output_dir == self.output_dir
+        assert str(self.predictor.output_dir).startswith(str(self.output_dir))  # Chỉ check prefix
+        # Check directory structure
+        for dir_path in [self.predictor.csv_dir, self.predictor.plot_dir, self.predictor.log_dir]:
+            assert dir_path.exists()
+            assert dir_path.is_dir()
 
     def test_predict_batch(self, setup):
         """Test prediction on single batch"""
@@ -86,6 +95,10 @@ class TestPredictor:
         # Check value ranges
         assert torch.all((preds == 0) | (preds == 1))  # Binary predictions
         assert torch.all((probs >= 0) & (probs <= 1))  # Valid probabilities
+        
+        # Test on device
+        if self.predictor.device != 'cpu':
+            assert next(self.predictor.model.parameters()).device == torch.device(self.predictor.device)
 
     def test_predict(self, setup):
         """Test full prediction pipeline"""
@@ -103,11 +116,14 @@ class TestPredictor:
         
         # Check values
         assert np.all(np.isin(results['predictions'], [0, 1]))  # Binary predictions
-        assert np.all((results['probabilities'] >= 0) & (results['probabilities'] <= 1))  # Valid probabilities
+        assert np.all((results['probabilities'] >= 0) & (results['probabilities'] <= 1))
+        
+        # Check log file creation
+        assert (self.predictor.log_dir / 'inference.log').exists()
 
     def test_calculate_metrics(self, setup):
         """Test metrics calculation"""
-        # Create mock results
+        # Create mock results with known values
         mock_results = {
             'predictions': np.array([0, 1, 0, 1]),
             'probabilities': np.array([0.2, 0.8, 0.3, 0.7]),
@@ -116,7 +132,7 @@ class TestPredictor:
         
         metrics = self.predictor.calculate_metrics(mock_results)
         
-        # Check metric names
+        # Check required metrics
         required_metrics = ['accuracy', 'auc', 'tpr@fpr=0.01', 'hter']
         assert all(k in metrics for k in required_metrics)
         
@@ -126,6 +142,16 @@ class TestPredictor:
         assert 0 <= metrics['auc'] <= 1
         assert 0 <= metrics['tpr@fpr=0.01'] <= 1
         assert 0 <= metrics['hter'] <= 1
+
+        # Test with perfect predictions
+        perfect_results = {
+            'predictions': np.array([0, 1, 0, 1]),
+            'probabilities': np.array([0.0, 1.0, 0.0, 1.0]),
+            'labels': np.array([0, 1, 0, 1])
+        }
+        perfect_metrics = self.predictor.calculate_metrics(perfect_results)
+        assert perfect_metrics['accuracy'] == 1.0
+        assert perfect_metrics['auc'] == 1.0
 
     def test_from_checkpoint(self, setup):
         """Test loading model from checkpoint"""
@@ -152,7 +178,7 @@ class TestPredictor:
         assert probs.shape == (min(self.batch_size, len(batch[0])),)
 
     def test_save_results(self, setup):
-        """Test saving prediction results"""
+        """Test saving prediction results and visualization"""
         # Create mock results and metrics
         results = {
             'predictions': np.array([0, 1, 0, 1]),
@@ -170,8 +196,18 @@ class TestPredictor:
         self.predictor.save_results(results, metrics)
         
         # Check files exist
-        assert (self.output_dir / 'predictions.csv').exists()
-        assert (self.output_dir / 'metrics.csv').exists()
+        assert (self.predictor.csv_dir / 'predictions.csv').exists()
+        assert (self.predictor.csv_dir / 'metrics.csv').exists()
+        assert (self.predictor.plot_dir / 'roc_curve.png').exists()
+        
+        # Verify CSV contents
+        pred_df = pd.read_csv(self.predictor.csv_dir / 'predictions.csv')
+        assert all(c in pred_df.columns for c in ['prediction', 'probability', 'label'])
+        
+        metrics_df = pd.read_csv(self.predictor.csv_dir / 'metrics.csv')
+        assert all(k in metrics_df.columns for k in metrics.keys())
+        for k, v in metrics.items():
+            assert np.isclose(metrics_df[k].iloc[0], v)
 
     @pytest.fixture(autouse=True)
     def cleanup(self):
