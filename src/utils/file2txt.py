@@ -36,9 +36,10 @@ def convert_to_txt(source_path, export_root):
 
 def process_directory(dir_path, export_root):
     """Process directory recursively"""
+    ignore_folder = [".pytest_cache", ".git", "src/utils"]
+    
     for root, _, files in os.walk(dir_path):
-        # Skip .git directory
-        if ".git" in root:
+        if ignore_folder in root:
             continue
 
         for file in files:
