@@ -2,7 +2,6 @@ import os
 import sys
 import pytest
 import torch
-import argparse
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -11,8 +10,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.main import parse_args, set_seed, get_optimizer, get_scheduler, main
 from src.model.ssan import SSAN
 from src.config import Config
-from src.runner.trainer import Trainer
-from src.runner.predictor import Predictor
 
 class TestMain:
     @pytest.fixture(autouse=True)
