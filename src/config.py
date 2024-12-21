@@ -48,3 +48,28 @@ class Config:
         self.protocol = None 
         self.train_ratio = None
         self.val_test_ratio = None
+        
+        # Training hyperparameters
+        self.num_epochs = 100
+        self.learning_rate = 1e-4
+        self.weight_decay = 5e-5
+        self.momentum = 0.9
+        self.optimizer = 'adam'  # 'adam' or 'sgd'
+        self.scheduler = 'step'  # 'step' or 'cosine'
+        self.step_size = 30     # for StepLR
+        self.gamma = 0.1        # for StepLR
+        self.warmup_epochs = 5  # for CosineAnnealingWarmRestarts
+        self.min_lr = 1e-6      # for CosineAnnealingWarmRestarts
+        
+        # Model configs
+        self.num_domains = 5
+        self.ada_blocks = 2
+        self.dropout = 0.1
+        
+        # Loss weights
+        self.lambda_adv = 0.1      # Weight for domain adversarial loss
+        self.lambda_contrast = 0.1  # Weight for contrastive loss
+        
+        # Early stopping
+        self.patience = 10
+        self.early_stopping = True
