@@ -7,6 +7,9 @@ from pathlib import Path
 import logging
 from torch.amp import autocast, GradScaler
 from typing import Dict, Any, Optional
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
 
 class Trainer:
     """SSAN Trainer with mixed precision training and comprehensive metrics tracking"""
@@ -167,8 +170,12 @@ class Trainer:
         # Calculate accuracy at best threshold
         best_thresh_idx = np.argmax(tpr - fpr)
         accuracy = np.mean((scores >= thresholds[best_thresh_idx]) == labels)
-
+        
+        # Calculate loss using binary cross entropy
+        loss = -np.mean(labels * np.log(scores + 1e-7) + (1 - labels) * np.log(1 - scores + 1e-7))
+        
         return {
+            'loss': loss,
             'auc': auc,
             'accuracy': accuracy,
             'tpr@fpr=0.01': tpr_at_fpr01,
@@ -247,13 +254,63 @@ class Trainer:
             
         return self.should_stop
 
+    def _save_metrics_to_csv(self, metrics: Dict[str, float], mode: str, epoch: int) -> None:
+        """Save metrics to CSV file
+        
+        Args:
+            metrics: Metrics dictionary to save
+            mode: 'train' or 'val' or 'test'
+            epoch: Current epoch number
+        """
+        # Create DataFrame from metrics
+        df = pd.DataFrame([metrics])
+        
+        # Save to CSV
+        csv_path = self.csv_dir / f"{mode}_metrics.csv"
+        if not csv_path.exists():
+            df.to_csv(csv_path, index=False)
+        else:
+            df.to_csv(csv_path, mode='a', header=False, index=False)
+
+    def _plot_training_curves(self) -> None:
+        """Plot and save training curves"""
+        try:
+            # Read metrics from CSV
+            train_df = pd.read_csv(self.csv_dir / "train_metrics.csv")
+            val_df = pd.read_csv(self.csv_dir / "val_metrics.csv")
+            
+            # Plot metrics
+            metrics_to_plot = [
+                ('loss', 'Loss'),
+                ('accuracy', 'Accuracy'), 
+                ('auc', 'AUC-ROC')
+            ]
+            
+            for metric, title in metrics_to_plot:
+                if metric in train_df.columns and metric in val_df.columns:
+                    plt.figure(figsize=(10, 6))
+                    plt.plot(train_df[metric], label='Train')
+                    plt.plot(val_df[metric], label='Validation')
+                    plt.title(f'{title} vs Epoch')
+                    plt.xlabel('Epoch')
+                    plt.ylabel(title)
+                    plt.legend()
+                    plt.grid(True)
+                    plt.savefig(self.plot_dir / f'{metric}_curve.png')
+                    plt.close()
+        except Exception as e:
+            self.logger.warning(f"Failed to plot training curves: {str(e)}")
+
     def setup_directories(self) -> None:
         """Create necessary directories"""
-        self.output_dir = Path(self.config.output_dir)
-        self.ckpt_dir = self.output_dir / 'checkpoints' / self.config.run_name
-        self.log_dir = self.output_dir / 'logs' / self.config.run_name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.output_dir = Path(self.config.output_dir) / f"train_{timestamp}"
+        self.ckpt_dir = self.output_dir / 'checkpoints'
+        self.log_dir = self.output_dir / 'logs' 
+        self.csv_dir = self.output_dir / 'csv'
+        self.plot_dir = self.output_dir / 'plots'
         
-        for d in [self.ckpt_dir, self.log_dir]:
+        for d in [self.ckpt_dir, self.log_dir, self.csv_dir, self.plot_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
     def setup_logging(self) -> None:
@@ -281,6 +338,7 @@ class Trainer:
         try:
             self.model.train()
             metrics = self._init_metrics()
+            all_labels, all_scores = [], []  # Thêm để tính AUC
             
             # Update lambda for GRL
             self.lambda_val = min(1.0, epoch / self.config.num_epochs)
@@ -292,17 +350,28 @@ class Trainer:
                 self._update_metrics(metrics, batch_metrics)
                 self._update_progress(pbar, metrics)
                 self.global_step += 1
+                
+                # Collect predictions for AUC calculation
+                images, _, labels, _ = batch
+                with torch.no_grad():
+                    pred, _ = self.model(images.to(self.device))
+                    pred = torch.sigmoid(pred.view(pred.size(0), -1).mean(dim=1))
+                    all_labels.extend(labels.cpu().numpy())
+                    all_scores.extend(pred.cpu().numpy())
 
-                # Call batch end callback
                 if 'on_batch_end' in self.callbacks:
                     self.callbacks['on_batch_end'](self, batch_metrics)
 
             # Calculate epoch averages
             metrics = self._finalize_metrics(metrics)
+            
+            # Add AUC metric
+            metrics.update(self.calculate_metrics(np.array(all_labels), np.array(all_scores)))
+            
             self._log_metrics('train', epoch, metrics)
-
+            self._save_metrics_to_csv(metrics, 'train', epoch)
+            
             return metrics
-
         except Exception as e:
             self.logger.error(f"Error in training epoch {epoch}: {str(e)}")
             raise
@@ -365,11 +434,7 @@ class Trainer:
         return self.calculate_metrics(np.array(all_labels), np.array(all_scores))
 
     def train(self) -> Dict[str, float]:
-        """Main training loop
-        
-        Returns:
-            Best metrics achieved during training
-        """
+        """Main training loop"""
         try:
             self.logger.info("Starting training...")
             
@@ -381,9 +446,13 @@ class Trainer:
                 if 'on_epoch_start' in self.callbacks:
                     self.callbacks['on_epoch_start'](self, epoch)
                 
-                # Train and evaluate
+                # Train and evaluate  
                 train_metrics = self.train_epoch(epoch)
                 val_metrics = self.evaluate(self.val_loader, mode='val')
+
+                # Save metrics to CSV
+                self._save_metrics_to_csv(train_metrics, 'train', epoch)
+                self._save_metrics_to_csv(val_metrics, 'val', epoch)
                 
                 # Update learning rate
                 self.scheduler.step()
@@ -395,13 +464,17 @@ class Trainer:
                 # Save checkpoints
                 self._save_checkpoints(epoch, val_metrics)
                 
+                # Plot training curves
+                self._plot_training_curves()
+                
                 # Call epoch end callback
                 if 'on_epoch_end' in self.callbacks:
                     self.callbacks['on_epoch_end'](self, train_metrics, val_metrics)
                 
             # Final evaluation
-            self.logger.info("Training completed. Running final evaluation...")
-            test_metrics = self.evaluate(self.test_loader, mode='test') 
+            self.logger.info("Training completed. Running final evaluation...") 
+            test_metrics = self.evaluate(self.test_loader, mode='test')
+            self._save_metrics_to_csv(test_metrics, 'test', self.current_epoch)
             self._log_final_results(test_metrics)
 
             return self.best_metrics
