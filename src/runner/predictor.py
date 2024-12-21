@@ -1,17 +1,20 @@
+from datetime import datetime
+import matplotlib.pyplot as plt
+import pandas as pd
 import torch
 import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
 import logging
 from tqdm import tqdm
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 class Predictor:
     """SSAN model predictor for inference"""
 
     def __init__(
         self,
-        model: torch.nn.Module,
+        model: torch.nn.Module, 
         test_loader: torch.utils.data.DataLoader,
         device: str,
         output_dir: Optional[Path] = None
@@ -29,14 +32,57 @@ class Predictor:
         self.device = device
         self.output_dir = Path(output_dir) if output_dir else None
         
-        # Setup logging
+        if self.output_dir:
+            self.setup_directories()
         self.setup_logging()
+
+    def _plot_roc_curve(self, labels: np.ndarray, scores: np.ndarray) -> None:
+        """Plot and save ROC curve"""
+        try:
+            from sklearn.metrics import roc_curve, auc
+            
+            # Calculate ROC curve
+            fpr, tpr, _ = roc_curve(labels, scores)
+            roc_auc = auc(fpr, tpr)
+            
+            # Plot
+            plt.figure(figsize=(10, 6))
+            plt.plot(fpr, tpr, color='darkorange', lw=2, 
+                    label=f'ROC curve (AUC = {roc_auc:0.2f})')
+            plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate') 
+            plt.title('Receiver Operating Characteristic (ROC) Curve')
+            plt.legend(loc="lower right")
+            plt.grid(True)
+            
+            # Save
+            plt.savefig(self.plot_dir / 'roc_curve.png')
+            plt.close()
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to plot ROC curve: {str(e)}")
+
+    def setup_directories(self) -> None:
+        """Create necessary directories"""
+        if self.output_dir:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.output_dir = self.output_dir / f"predict_{timestamp}"
+            self.csv_dir = self.output_dir / 'csv'
+            self.plot_dir = self.output_dir / 'plots'
+            self.log_dir = self.output_dir / 'logs'
+            
+            for d in [self.csv_dir, self.plot_dir, self.log_dir]:
+                d.mkdir(parents=True, exist_ok=True)
 
     def setup_logging(self) -> None:
         """Setup logging configuration"""
         if self.output_dir:
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-            log_file = self.output_dir / 'inference.log'
+            # Đảm bảo thư mục log tồn tại
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = self.log_dir / 'inference.log'
             logging.basicConfig(
                 format='%(asctime)s - %(levelname)s - %(message)s',
                 level=logging.INFO,
@@ -161,30 +207,27 @@ class Predictor:
         for name, value in metrics.items():
             self.logger.info(f"{name}: {value:.4f}")
 
-    def save_results(
-        self, 
-        results: Dict[str, np.ndarray],
-        metrics: Dict[str, float]
-    ) -> None:
-        """Save inference results and metrics
+    def save_results(self, results: Dict[str, np.ndarray], metrics: Dict[str, float]) -> None:
+        """Save prediction results, metrics and plots
         
         Args:
             results: Dictionary containing predictions and labels
-            metrics: Dictionary of calculated metrics
+            metrics: Dictionary of calculated metrics  
         """
-        import pandas as pd
-        
-        # Save predictions
+        # Save predictions to CSV
         df = pd.DataFrame({
             'prediction': results['predictions'],
             'probability': results['probabilities'],
             'label': results['labels']
         })
-        df.to_csv(self.output_dir / 'predictions.csv', index=False)
+        df.to_csv(self.csv_dir / 'predictions.csv', index=False)
         
-        # Save metrics
+        # Save metrics to CSV  
         metrics_df = pd.DataFrame([metrics])
-        metrics_df.to_csv(self.output_dir / 'metrics.csv', index=False)
+        metrics_df.to_csv(self.csv_dir / 'metrics.csv', index=False)
+        
+        # Plot ROC curve
+        self._plot_roc_curve(results['labels'], results['probabilities'])
         
         self.logger.info(f"Results saved to {self.output_dir}")
 
