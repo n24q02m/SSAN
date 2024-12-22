@@ -35,7 +35,7 @@ def parse_args():
     )
     basic_group.add_argument(
         '--checkpoint', type=str,
-        help='Path to checkpoint file for testing'
+        help='Path to checkpoint file (.pth) or folder containing checkpoints for testing'
     )
 
     # Training configs

@@ -194,6 +194,17 @@ class Trainer:
             'metrics': metrics
         }, latest_path)
 
+        # Save best checkpoint if current model is best
+        if metrics['accuracy'] > self.best_metrics['accuracy']:
+            best_path = self.ckpt_dir / 'best.pth'
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'scheduler_state_dict': self.scheduler.state_dict(),
+                'metrics': metrics
+            }, best_path)
+
     def _log_metrics(self, mode: str, epoch: int, metrics: Dict[str, float]) -> None:
         """Log training/validation metrics
         

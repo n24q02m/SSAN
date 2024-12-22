@@ -69,7 +69,7 @@ class Predictor:
         """Create necessary directories"""
         if self.output_dir:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.output_dir = self.output_dir / f"predict_{timestamp}"
+            self.output_dir = self.output_dir / f"test_{timestamp}"
             self.csv_dir = self.output_dir / 'csv'
             self.plot_dir = self.output_dir / 'plots'
             self.log_dir = self.output_dir / 'logs'
@@ -232,26 +232,23 @@ class Predictor:
         self.logger.info(f"Results saved to {self.output_dir}")
 
     @classmethod
-    def from_checkpoint(
-        cls,
-        checkpoint_path: str,
-        model: torch.nn.Module,
-        test_loader: torch.utils.data.DataLoader,
-        device: str,
-        output_dir: Optional[str] = None
-    ) -> 'Predictor':
-        """Create predictor by loading model from checkpoint
+    def from_checkpoint(cls, checkpoint_path, model, test_loader, device, output_dir=None):
+        """Load model from checkpoint path
         
         Args:
-            checkpoint_path: Path to model checkpoint
-            model: SSAN model instance
-            test_loader: Test data loader
-            device: Device to run on
-            output_dir: Optional output directory
-            
-        Returns:
-            Initialized predictor with loaded model
+            checkpoint_path: Path to checkpoint file or folder containing checkpoints.
+                        If folder, will try to load best.pth first, then latest.pth
         """
+        if Path(checkpoint_path).is_dir():
+            best_ckpt = Path(checkpoint_path) / 'best.pth'
+            latest_ckpt = Path(checkpoint_path) / 'latest.pth'
+            
+            if best_ckpt.exists():
+                checkpoint_path = best_ckpt
+            elif latest_ckpt.exists(): 
+                checkpoint_path = latest_ckpt
+            else:
+                raise FileNotFoundError(f"No checkpoint found in {checkpoint_path}")
         # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
         
