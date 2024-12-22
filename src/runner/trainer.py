@@ -81,6 +81,16 @@ class Trainer:
         # Setup paths and logging
         self.setup_directories()
         self.setup_logging()
+        
+        # Change output directory setup
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.output_dir = config.output_dir
+        if not hasattr(config, 'run_dir'):
+            # Create new run directory only once
+            config.run_dir = self.output_dir / f"train_{timestamp}"
+            
+        self.run_dir = config.run_dir
+        self.setup_directories()
 
     def _init_metrics(self) -> Dict[str, float]:
         """Initialize metrics dictionary"""
@@ -314,12 +324,11 @@ class Trainer:
 
     def setup_directories(self) -> None:
         """Create necessary directories"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_dir = Path(self.config.output_dir) / f"train_{timestamp}"
-        self.ckpt_dir = self.output_dir / 'checkpoints'
-        self.log_dir = self.output_dir / 'logs' 
-        self.csv_dir = self.output_dir / 'csv'
-        self.plot_dir = self.output_dir / 'plots'
+        # Use run_dir instead of creating new timestamped directory
+        self.ckpt_dir = self.run_dir / 'checkpoints'
+        self.log_dir = self.run_dir / 'logs'
+        self.csv_dir = self.run_dir / 'csv'
+        self.plot_dir = self.run_dir / 'plots'
         
         for d in [self.ckpt_dir, self.log_dir, self.csv_dir, self.plot_dir]:
             d.mkdir(parents=True, exist_ok=True)
