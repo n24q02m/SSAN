@@ -36,8 +36,7 @@ class TestTrainer:
                 self.num_epochs = 2
                 self.patience = 3
                 self.batch_size = 4
-                self.output_dir = "tests/output"
-                self.run_name = "test_run"
+                self.output_dir = "output/test_trainer"
                 self.lambda_adv = 0.1
                 self.lambda_contrast = 0.1
                 

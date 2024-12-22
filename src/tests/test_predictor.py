@@ -37,7 +37,7 @@ class TestPredictor:
         self.test_loader = self._create_mock_dataloader()
 
         # Setup output directory
-        self.output_dir = Path("tests/output/predictor")
+        self.output_dir = Path("output/test_predictor")
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)

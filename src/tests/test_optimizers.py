@@ -57,7 +57,7 @@ class TestOptimizers:
                 self.num_domains = 5
                 self.num_epochs = 2
                 self.patience = 3
-                self.output_dir = Path("output/optimizers")
+                self.output_dir = Path("output/test_optimizers")
                 self.lambda_adv = 0.1
                 self.lambda_contrast = 0.1
                     
