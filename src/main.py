@@ -1,15 +1,19 @@
+import os
+import sys
 import argparse
 import torch
 import random
 import numpy as np
 
-from .config import Config
-from .data.datasets import get_dataloaders
-from .model.ssan import SSAN
-from .model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
-from .runner.trainer import Trainer
-from .runner.predictor import Predictor
-from .runner.optimizers import find_optimal_batch_size, find_optimal_workers
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from src.config import Config
+from src.data.datasets import get_dataloaders
+from src.model.ssan import SSAN
+from src.model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
+from src.runner.trainer import Trainer
+from src.runner.predictor import Predictor
+from src.runner.optimizers import find_optimal_batch_size, find_optimal_workers
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -81,31 +85,7 @@ def parse_args():
         help='Fraction of data to use (0-1)'
     )
 
-    # Short config aliases
-    basic_group.add_argument(
-        '-m', '--mode_short', dest='mode',
-        type=str, choices=['train', 'test'],
-        help='Short for --mode'
-    )
-    basic_group.add_argument(
-        '-p', '--protocol_short', dest='protocol',
-        type=str, choices=['p1', 'p2', 'p3', 'p4'],
-        help='Short for --protocol (p1=protocol_1, etc)'
-    )
-    train_group.add_argument(
-        '-e', '--epochs_short', dest='epochs',
-        type=int, help='Short for --epochs'
-    )
-    train_group.add_argument(
-        '-b', '--batch_short', dest='batch_size',
-        type=int, help='Short for --batch_size'
-    )
-
     args = parser.parse_args()
-
-    # Convert short protocol names to full names
-    if args.protocol in ['p1', 'p2', 'p3', 'p4']:
-        args.protocol = f"protocol_{args.protocol[1]}"
 
     return args
 

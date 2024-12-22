@@ -1,7 +1,11 @@
+import os
+import sys
 import torch
 import torch.nn as nn
 
-from .components import (FeatureGenerator, ContentExtractor, StyleExtractor, 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from src.model.components import (FeatureGenerator, ContentExtractor, StyleExtractor, 
                         AdaIN, Classifier, DomainDiscriminator)
 
 class SSAN(nn.Module):
