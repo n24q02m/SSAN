@@ -24,7 +24,7 @@ def get_transforms(mode="train", config=None):
             A.HorizontalFlip(p=0.5),
             A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=45, p=0.5),
             A.OneOf([
-                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03, p=0.5),
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, p=0.5),
                 A.GridDistortion(p=0.5),
                 A.OpticalDistortion(distort_limit=1, shift_limit=0.5, p=0.5),
             ], p=0.3),
@@ -168,10 +168,19 @@ class FASDataset(Dataset):
         self.config = config
         self.transform = transform
 
-        # Đọc và lấy mẫu dữ liệu theo tỷ lệ debug_fraction
+        # Dataset name mapping
+        self.dataset_map = {
+            "CelebA_Spoof": "CelebA_Spoof_dataset" if not config.is_kaggle else "celeba-spoof-face-anti-spoofing-dataset",
+            "CATI_FAS": "CATI_FAS_dataset" if not config.is_kaggle else "cati-fas-face-anti-spoofing-dataset",  
+            "LCC_FASD": "LCC_FASD_dataset" if not config.is_kaggle else "lcc-fasd-face-anti-spoofing-dataset",
+            "NUAAA": "NUAAA_dataset" if not config.is_kaggle else "nuaaa-face-anti-spoofing-dataset",
+            "Zalo_AIC": "Zalo_AIC_dataset" if not config.is_kaggle else "zalo-aic-face-anti-spoofing-dataset"
+        }
+
+        # Read and sample data based on debug_fraction
         df = pd.read_csv(protocol_csv)
         if config.debug_fraction < 1.0:
-            # Đảm bảo lấy mẫu cân bằng giữa các class
+            # Ensure balanced sampling between classes
             sampled_dfs = []
             for label in df['label'].unique():
                 label_df = df[df['label'] == label]
@@ -182,26 +191,53 @@ class FASDataset(Dataset):
         else:
             self.data = df
         
-        # Cache image paths và bbox
+        # Cache image paths and bboxes
         self.cached_paths = []
         for idx in range(len(self.data)):
-            row = self.data.iloc[idx]
-            if config.is_kaggle:
-                dataset_dir = config.data_dir / f"{row['dataset']}-face-anti-spoofing-dataset"
-            else:
-                dataset_dir = config.data_dir / f"{row['dataset']}_dataset"
+            try:
+                row = self.data.iloc[idx]
+                dataset_dir = config.data_dir / self.dataset_map[row['dataset']]
                 
-            img_dir = dataset_dir / row["folder"]
-            img_path = next(img_dir.glob(f"{row['filename']}.*"))
-            bbox_path = img_path.parent / f"{img_path.stem}_BB.txt"
+                img_dir = dataset_dir / row["folder"]
+                if not img_dir.exists():
+                    raise FileNotFoundError(f"Directory not found: {img_dir}")
+
+                # Try both jpg and png extensions
+                img_patterns = [f"{row['filename']}.jpg", f"{row['filename']}.png"] 
+                img_path = None
+                for pattern in img_patterns:
+                    potential_path = img_dir / pattern
+                    if potential_path.exists():
+                        img_path = potential_path
+                        break
+
+                if img_path is None:
+                    raise FileNotFoundError(f"No image file found for {row['filename']} in {img_dir}")
+
+                bbox_path = img_path.parent / f"{img_path.stem}_BB.txt"
+                if not bbox_path.exists():
+                    raise FileNotFoundError(f"Bbox file not found: {bbox_path}")
+
+                # Read bbox coordinates
+                with open(bbox_path) as f:
+                    x, y, w, h = map(int, f.read().strip().split()[:4])
+                    
+                self.cached_paths.append({
+                    'img_path': img_path,
+                    'bbox': (x, y, w, h)
+                })
+
+            except Exception as e:
+                print(f"\nError processing row {idx}:")
+                print(f"Dataset: {row['dataset']}")
+                print(f"Filename: {row['filename']}")
+                print(f"Error: {str(e)}")
+                continue
+                
+        if not self.cached_paths:
+            raise RuntimeError("No valid images found in dataset")
             
-            with open(bbox_path) as f:
-                x, y, w, h = map(int, f.read().strip().split()[:4])
-                
-            self.cached_paths.append({
-                'img_path': img_path,
-                'bbox': (x, y, w, h)
-            })
+        print(f"Successfully loaded {len(self.cached_paths)} valid images")
             
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
@@ -250,31 +286,41 @@ class DataLoaderX(DataLoader):
 
 def get_dataloaders(config):
     """Create data loaders with prefetching"""
+    print("Creating dataloaders...")
     protocol_dir = config.protocol_dir / config.protocol
     
+    print("Loading training data...")
     train_dataset = FASDataset(
         protocol_dir / "train.csv",
         config,
         transform=get_transforms("train", config)
     )
+    print(f"Training dataset size: {len(train_dataset)}")
+    
+    print("Loading validation data...")
     val_dataset = FASDataset(
         protocol_dir / "val.csv", 
         config,
         transform=get_transforms("val", config)
     )
+    print(f"Validation dataset size: {len(val_dataset)}")
+    
+    print("Loading test data...")
     test_dataset = FASDataset(
         protocol_dir / "test.csv",
         config, 
         transform=get_transforms("test", config)
     )
+    print(f"Test dataset size: {len(test_dataset)}")
 
-    return {
+    print("Creating DataLoaders...")
+    loaders = {
         "train": DataLoaderX(
             train_dataset,
             batch_size=config.batch_size,
-            shuffle=True,
+            shuffle=True, 
             num_workers=config.num_workers,
-            pin_memory=True  # Sử dụng pinned memory cho GPU
+            pin_memory=True
         ),
         "val": DataLoaderX(
             val_dataset,
@@ -285,12 +331,14 @@ def get_dataloaders(config):
         ),
         "test": DataLoaderX(
             test_dataset,
-            batch_size=config.batch_size, 
+            batch_size=config.batch_size,
             shuffle=False,
             num_workers=config.num_workers,
             pin_memory=True
         )
     }
+    print("DataLoaders created successfully")
+    return loaders
 
 def main():
     """Generate protocol splits"""
