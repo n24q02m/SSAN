@@ -16,8 +16,7 @@ def parse_args():
     
     # Basic configs
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'])
-    parser.add_argument('--protocol', type=str, required=True, 
-                       choices=['protocol_1', 'protocol_2', 'protocol_3', 'protocol_4'])
+    parser.add_argument('--protocol', type=str, required=True, choices=['protocol_1', 'protocol_2', 'protocol_3', 'protocol_4'])
     parser.add_argument('--checkpoint', type=str, help='Path to checkpoint for testing')
     
     # Training configs 
@@ -30,6 +29,9 @@ def parse_args():
     # Device configs
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--num_workers', type=int, help='Override default workers')
+    
+    # Debug configs
+    parser.add_argument('--debug_fraction', type=float, default=1.0, help='Fraction of data to use (0-1)')
     
     return parser.parse_args()
 
@@ -79,6 +81,9 @@ def main():
     config.protocol = args.protocol
     
     # Override config with args
+    if args.debug_fraction:
+        config.debug_fraction = args.debug_fraction
+        print(f"Using {config.debug_fraction*100:.1f}% of data for debugging")
     if args.epochs:
         config.num_epochs = args.epochs
     if args.lr:

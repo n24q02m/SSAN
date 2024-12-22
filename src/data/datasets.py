@@ -167,7 +167,20 @@ class FASDataset(Dataset):
     def __init__(self, protocol_csv, config, transform=None):
         self.config = config
         self.transform = transform
-        self.data = pd.read_csv(protocol_csv)
+
+        # Đọc và lấy mẫu dữ liệu theo tỷ lệ debug_fraction
+        df = pd.read_csv(protocol_csv)
+        if config.debug_fraction < 1.0:
+            # Đảm bảo lấy mẫu cân bằng giữa các class
+            sampled_dfs = []
+            for label in df['label'].unique():
+                label_df = df[df['label'] == label]
+                n_samples = int(len(label_df) * config.debug_fraction)
+                sampled_df = label_df.sample(n=n_samples, random_state=config.seed)
+                sampled_dfs.append(sampled_df)
+            self.data = pd.concat(sampled_dfs).reset_index(drop=True)
+        else:
+            self.data = df
         
         # Cache image paths và bbox
         self.cached_paths = []

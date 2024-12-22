@@ -73,3 +73,6 @@ class Config:
         # Early stopping
         self.patience = 10
         self.early_stopping = True
+        
+        # Debug config
+        self.debug_fraction = 1.0
