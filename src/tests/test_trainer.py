@@ -157,12 +157,22 @@ class TestTrainer:
         val_metrics = self.trainer.evaluate(self.val_loader)
         self.trainer._save_checkpoints(0, val_metrics)
 
-        # Kiểm tra checkpoint file
+        # Kiểm tra cả latest và best checkpoint
         latest_ckpt = self.trainer.ckpt_dir / 'latest.pth'
+        best_ckpt = self.trainer.ckpt_dir / 'best.pth'
         assert latest_ckpt.exists()
+        assert best_ckpt.exists()
 
-        # Load và verify checkpoint
+        # Load và verify latest checkpoint
         ckpt = torch.load(latest_ckpt, weights_only=False)
+        assert 'epoch' in ckpt
+        assert 'model_state_dict' in ckpt
+        assert 'optimizer_state_dict' in ckpt
+        assert 'scheduler_state_dict' in ckpt
+        assert 'metrics' in ckpt
+        
+        # Load và verify best checkpoint
+        ckpt = torch.load(best_ckpt, weights_only=False)
         assert 'epoch' in ckpt
         assert 'model_state_dict' in ckpt
         assert 'optimizer_state_dict' in ckpt

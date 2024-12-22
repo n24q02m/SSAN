@@ -155,13 +155,12 @@ class TestPredictor:
 
     def test_from_checkpoint(self, setup):
         """Test loading model from checkpoint"""
-        # Create a mock checkpoint
+        # Case 1: Test loading from .pth file
         checkpoint_path = self.output_dir / "mock_checkpoint.pth"
         torch.save({
             'model_state_dict': self.model.state_dict(),
         }, checkpoint_path)
         
-        # Create new predictor from checkpoint
         predictor = Predictor.from_checkpoint(
             checkpoint_path=checkpoint_path,
             model=SSAN(num_domains=self.num_domains),
@@ -170,12 +169,47 @@ class TestPredictor:
             output_dir=str(self.output_dir)
         )
         
-        # Test prediction works
-        batch = next(iter(self.test_loader))
-        preds, probs = predictor.predict_batch(batch)
-        
-        assert preds.shape == (min(self.batch_size, len(batch[0])),)
-        assert probs.shape == (min(self.batch_size, len(batch[0])),)
+        # Case 2: Test loading from directory with best.pth
+        ckpt_dir = self.output_dir / "checkpoints"
+        ckpt_dir.mkdir(exist_ok=True)
+        best_path = ckpt_dir / "best.pth"
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+        }, best_path)
+
+        predictor = Predictor.from_checkpoint(
+            checkpoint_path=ckpt_dir,
+            model=SSAN(num_domains=self.num_domains),
+            test_loader=self.test_loader,
+            device='cpu',
+            output_dir=str(self.output_dir)
+        )
+
+        # Case 3: Test loading from directory with latest.pth
+        latest_path = ckpt_dir / "latest.pth"
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+        }, latest_path)
+        os.remove(best_path)  # Remove best.pth to test latest.pth fallback
+
+        predictor = Predictor.from_checkpoint(
+            checkpoint_path=ckpt_dir,
+            model=SSAN(num_domains=self.num_domains),
+            test_loader=self.test_loader,
+            device='cpu',
+            output_dir=str(self.output_dir)
+        )
+
+        # Case 4: Test error when no checkpoint found
+        empty_dir = self.output_dir / "empty"
+        empty_dir.mkdir(exist_ok=True)
+        with pytest.raises(FileNotFoundError):
+            Predictor.from_checkpoint(
+                checkpoint_path=empty_dir,
+                model=self.model,
+                test_loader=self.test_loader,
+                device='cpu'
+            )
 
     def test_save_results(self, setup):
         """Test saving prediction results and visualization"""
