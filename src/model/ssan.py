@@ -99,7 +99,7 @@ class SSAN(nn.Module):
         batch_size = x.size(0)
         
         # Random permutation for style shuffling
-        rand_idx = torch.randperm(batch_size) 
+        rand_idx = torch.randperm(batch_size)
         x_shuffled = x[rand_idx]
         labels_shuffled = live_spoof_labels[rand_idx]
         
@@ -107,8 +107,11 @@ class SSAN(nn.Module):
         pred_orig, domain_pred, feats_orig = self.forward(x, domain_labels, return_feats=True, lambda_val=lambda_val)
         _, _, feats_shuffled = self.forward(x_shuffled, domain_labels[rand_idx], return_feats=True, lambda_val=lambda_val)
         
-        # Create contrast labels based on live/spoof labels
+        # Create contrast labels
         contrast_labels = (live_spoof_labels == labels_shuffled).long()
         contrast_labels = torch.where(contrast_labels == 1, 1, -1)
+        
+        # Average spatial dimensions for prediction
+        pred_orig = pred_orig.view(pred_orig.size(0), -1).mean(dim=1)
         
         return pred_orig, domain_pred, feats_orig['style_feat'], feats_shuffled['style_feat'], contrast_labels

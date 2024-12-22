@@ -7,7 +7,7 @@ import torch
 import optuna
 import numpy as np
 from typing import Dict, Any
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.nn import Module
 from torch.optim import Adam, SGD, lr_scheduler
 from torch.cuda import memory_allocated, empty_cache, get_device_properties, Event, synchronize
@@ -179,6 +179,30 @@ class HyperparameterOptimizer:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
+    def _get_balanced_indices(self, dataset, fraction):
+        """Get balanced indices for both classes"""
+        pos_indices = []
+        neg_indices = [] 
+        
+        # Collect indices
+        for i in range(len(dataset)):
+            _, _, label, _ = dataset[i]
+            if label == 1:
+                pos_indices.append(i)
+            else:
+                neg_indices.append(i)
+                
+        # Ensure minimum 1 sample per class
+        n_samples = max(1, int(min(len(pos_indices), len(neg_indices)) * fraction))
+        
+        # Sample with replacement if needed
+        replace = n_samples > min(len(pos_indices), len(neg_indices))
+        
+        pos_indices = np.random.choice(pos_indices, n_samples, replace=replace)
+        neg_indices = np.random.choice(neg_indices, n_samples, replace=replace)
+        
+        return np.concatenate([pos_indices, neg_indices])
+
     def objective(self, trial: optuna.Trial) -> float:
         """Objective function for hyperparameter optimization"""
         # Sample hyperparameters
@@ -209,7 +233,8 @@ class HyperparameterOptimizer:
         # Initialize model, trainer etc.
         model = self.model_class(
             num_domains=self.config.num_domains,
-            dropout=params["dropout"]
+            ada_blocks=self.config.ada_blocks,
+            dropout=trial.suggest_float("dropout", 0.1, 0.5)
         ).to(self.config.device)
         
         if params["optimizer"] == "adam":
@@ -241,21 +266,28 @@ class HyperparameterOptimizer:
             
         criterion = {
             'cls': ClassificationLoss(),
-            'domain': DomainAdversarialLoss(), 
+            'domain': DomainAdversarialLoss(),
             'contrast': ContrastiveLoss()
         }
+        criterion = {k: v.to(self.config.device) for k, v in criterion.items()}
 
         # Create subset of data for optimization
         train_subset_size = int(len(self.train_loader.dataset) * self.optimization_fraction)
         val_subset_size = int(len(self.val_loader.dataset) * self.optimization_fraction)
         
-        train_subset = torch.utils.data.Subset(
+        train_subset = Subset(
             self.train_loader.dataset,
-            indices=torch.randperm(len(self.train_loader.dataset))[:train_subset_size]
+            indices=self._get_balanced_indices(
+                self.train_loader.dataset, 
+                self.optimization_fraction
+            )
         )
-        val_subset = torch.utils.data.Subset(
+        val_subset = Subset(
             self.val_loader.dataset,
-            indices=torch.randperm(len(self.val_loader.dataset))[:val_subset_size]
+            indices=self._get_balanced_indices(
+                self.val_loader.dataset,
+                self.optimization_fraction
+            )
         )
 
         # Create new dataloaders with subsets
@@ -325,7 +357,7 @@ class HyperparameterOptimizer:
                 consecutive_poor = 0
                 
             if consecutive_poor >= max_poor:
-                self.logger.info(f"Trial pruned due to poor performance: accuracy={accuracy:.4f}")
+                self.logger.info(f"Trial pruned due to poor performance: accuracy={accuracy:.6f}")
                 raise optuna.TrialPruned()
                 
             # Let Optuna handle pruning
@@ -341,28 +373,40 @@ class HyperparameterOptimizer:
         print(f"Will run {self.n_trials} trials with {self.timeout}s timeout")
         print("This may take a while...\n")
 
-        self.study.optimize(
-            self.objective,
-            n_trials=self.n_trials,
-            timeout=self.timeout,
-            show_progress_bar=True,
-            n_jobs=1,  # Run sequentially
-            catch=(Exception,)
-        )
-        
-        # Print and save results
-        self.logger.info("\nOptimization completed!")
-        self.logger.info("\nBest trial:")
-        trial = self.study.best_trial
-        self.logger.info(f"  Value: {trial.value:.4f}")
-        self.logger.info("  Params: ")
-        for key, value in trial.params.items():
-            self.logger.info(f"    {key}: {value}")
+        try:
+            self.study.optimize(
+                self.objective,
+                n_trials=self.n_trials,
+                timeout=self.timeout,
+                show_progress_bar=True,
+                n_jobs=1,  # Run sequentially 
+                catch=(Exception,)
+            )
+            
+            # Check if we have any completed trials
+            completed_trials = [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            
+            if completed_trials:
+                # Print and save results
+                self.logger.info("\nOptimization completed!")
+                self.logger.info("\nBest trial:")
+                trial = self.study.best_trial
+                self.logger.info(f"  Value: {trial.value:.6f}")
+                self.logger.info("  Params: ")
+                for key, value in trial.params.items():
+                    self.logger.info(f"    {key}: {value}")
 
-        # Save results
-        df = self.study.trials_dataframe()
-        results_file = self.output_dir / f"{self.study_name}_results.csv"
-        df.to_csv(results_file)
-        self.logger.info(f"\nResults saved to {results_file}")
-        
-        return self.study.best_params
+                # Save results
+                df = self.study.trials_dataframe()
+                results_file = self.output_dir / f"{self.study_name}_results.csv"
+                df.to_csv(results_file)
+                self.logger.info(f"\nResults saved to {results_file}")
+                
+                return self.study.best_params
+            else:
+                self.logger.warning("No trials completed successfully!")
+                return {}
+                
+        except Exception as e:
+            self.logger.error(f"Optimization failed: {str(e)}")
+            return {}

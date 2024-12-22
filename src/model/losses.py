@@ -13,7 +13,9 @@ class ClassificationLoss(nn.Module):
             pred: Model predictions (B, 1) 
             target: Binary labels (B,) with 0=spoof, 1=live
         """
-        return self.criterion(pred.squeeze(), target.float())
+        pred = pred.view(-1)  # Flatten prediction
+        target = target.float().view(-1)  # Flatten target and convert to float
+        return self.criterion(pred, target)
 
 class ContrastiveLoss(nn.Module):
     """Contrastive loss between stylized features"""

@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import roc_auc_score, roc_curve, accuracy_score
 
 class Trainer:
     """SSAN Trainer with mixed precision training and comprehensive metrics tracking"""
@@ -123,8 +123,7 @@ class Trainer:
 
     def _compute_accuracy(self, pred, labels) -> float:
         """Compute classification accuracy"""
-        # Fix: Use sigmoid and threshold for binary classification
-        pred_cls = (torch.sigmoid(pred) > 0.5).float() 
+        pred_cls = (torch.sigmoid(pred) > 0.5).float()
         return (pred_cls == labels).float().mean().item()
 
     def _update_metrics(self, metrics: Dict[str, float], batch_metrics: Dict[str, float]) -> None:
@@ -148,69 +147,104 @@ class Trainer:
         """Execute one evaluation step"""
         images, depth_maps, labels, domains = batch
         
-        images = images.to(self.device)  # [B,C,H,W]  
-        labels = labels.to(self.device)  # [B]
+        images = images.to(self.device)
+        labels = labels.to(self.device)
 
         with torch.no_grad():
-            pred, _ = self.model(images)  # Forward without domain adversarial
-            # Fix: Flatten prediction to match label shape 
-            pred = pred.view(pred.size(0), -1).mean(dim=1)  # [B]
-            scores = torch.sigmoid(pred)  # Use sigmoid for binary classification
+            # Forward pass without domain adversarial
+            pred, _ = self.model(images)
+            
+            # Fix: Reshape prediction tensor correctly
+            pred = pred.view(pred.size(0), -1).mean(dim=1)  # Average over spatial dimensions
+            scores = torch.sigmoid(pred)
+            
             return labels.cpu(), scores.cpu()
 
     def calculate_metrics(self, labels: np.ndarray, scores: np.ndarray) -> Dict[str, float]:
-        """Calculate evaluation metrics"""        
-        # Calculate AUC
-        auc = roc_auc_score(labels, scores)
-        
-        # Calculate TPR at specific FPR thresholds
-        fpr, tpr, thresholds = roc_curve(labels, scores)
-        
-        # Find TPR at FPR=0.01
-        idx_01 = np.argmin(np.abs(fpr - 0.01))
-        tpr_at_fpr01 = tpr[idx_01]
-        
-        # Find FPR at TPR=0.99
-        idx_99 = np.argmin(np.abs(tpr - 0.99))
-        fpr_at_tpr99 = fpr[idx_99]
-        
-        # Calculate accuracy at best threshold
-        best_thresh_idx = np.argmax(tpr - fpr)
-        accuracy = np.mean((scores >= thresholds[best_thresh_idx]) == labels)
-        
-        # Calculate loss using binary cross entropy
-        loss = -np.mean(labels * np.log(scores + 1e-7) + (1 - labels) * np.log(1 - scores + 1e-7))
-        
-        return {
-            'loss': loss,
-            'auc': auc,
-            'accuracy': accuracy,
-            'tpr@fpr=0.01': tpr_at_fpr01,
-            'fpr@tpr=0.99': fpr_at_tpr99
-        }
+        """Calculate evaluation metrics"""     
+        try:
+            unique_labels = np.unique(labels)
+            if len(unique_labels) < 2:
+                self.logger.warning(f"Batch contains only class {unique_labels[0]}")
+                return {
+                    'loss': -np.mean(labels * np.log(scores + 1e-7) + (1 - labels) * np.log(1 - scores + 1e-7)),
+                    'auc': 0.5, # AUC = 0.5 for random prediction
+                    'accuracy': accuracy_score(labels, scores > 0.5),
+                    'tpr@fpr=0.01': 0.0,
+                    'fpr@tpr=0.99': 1.0, 
+                    'hter': 0.5 # HTER = 0.5 for random prediction
+                }
+
+            # Tính metrics bình thường nếu có đủ classes
+            fpr, tpr, thresholds = roc_curve(labels, scores)
+            
+            # Tính TPR@FPR=0.01 với nội suy tuyến tính cẩn thận hơn
+            idx_fpr = np.searchsorted(fpr, 0.01, side='right') - 1  # Lấy điểm gần nhất bên trái
+            if idx_fpr >= 0 and idx_fpr + 1 < len(fpr):
+                # Nội suy tuyến tính giữa 2 điểm
+                slope = (tpr[idx_fpr + 1] - tpr[idx_fpr]) / (fpr[idx_fpr + 1] - fpr[idx_fpr])
+                tpr_at_fpr01 = tpr[idx_fpr] + slope * (0.01 - fpr[idx_fpr])
+            else:
+                # Nếu không thể nội suy, lấy giá trị gần nhất
+                tpr_at_fpr01 = tpr[max(0, idx_fpr)]
+
+            # Tương tự cho FPR@TPR=0.99
+            idx_tpr = np.searchsorted(tpr, 0.99, side='left')
+            if idx_tpr > 0 and idx_tpr < len(tpr):
+                slope = (fpr[idx_tpr] - fpr[idx_tpr - 1]) / (tpr[idx_tpr] - tpr[idx_tpr - 1])
+                fpr_at_tpr99 = fpr[idx_tpr - 1] + slope * (0.99 - tpr[idx_tpr - 1])
+            else:
+                fpr_at_tpr99 = fpr[min(len(fpr)-1, idx_tpr)]
+
+            return {
+                'loss': -np.mean(labels * np.log(scores + 1e-7) + (1 - labels) * np.log(1 - scores + 1e-7)),
+                'auc': roc_auc_score(labels, scores),
+                'accuracy': accuracy_score(labels, scores > 0.5),
+                'tpr@fpr=0.01': tpr_at_fpr01,
+                'fpr@tpr=0.99': fpr_at_tpr99,
+                'hter': (1-tpr_at_fpr01 + fpr_at_tpr99)/2
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating metrics: {str(e)}")
+            return {k: 0.0 for k in ['loss', 'auc', 'accuracy', 'tpr@fpr=0.01', 'fpr@tpr=0.99', 'hter']}
 
     def _save_checkpoints(self, epoch: int, metrics: Dict[str, float]) -> None:
         """Save model checkpoints"""
-        # Save latest checkpoint
-        latest_path = self.ckpt_dir / 'latest.pth'
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'metrics': metrics
-        }, latest_path)
-
-        # Save best checkpoint if current model is best
-        if metrics['accuracy'] > self.best_metrics['accuracy']:
-            best_path = self.ckpt_dir / 'best.pth'
-            torch.save({
+        try:
+            # Save latest checkpoint
+            latest_path = self.ckpt_dir / 'latest.pth'
+            checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
                 'metrics': metrics
-            }, best_path)
+            }
+            torch.save(checkpoint, latest_path)
+            
+            # Save best checkpoint based on multiple metrics
+            is_best = False
+            if not hasattr(self, 'best_val_metrics'):
+                self.best_val_metrics = metrics
+                is_best = True
+            else:
+                # Compare using AUC as primary metric
+                if metrics['auc'] > self.best_val_metrics['auc']:
+                    is_best = True
+                elif metrics['auc'] == self.best_val_metrics['auc']:
+                    # Use accuracy as secondary metric
+                    if metrics['accuracy'] > self.best_val_metrics['accuracy']:
+                        is_best = True
+                        
+            if is_best:
+                self.best_val_metrics = metrics.copy()
+                best_path = self.ckpt_dir / 'best.pth'
+                torch.save(checkpoint, best_path)
+                self.logger.info(f'Saved new best checkpoint at epoch {epoch+1}')
+                
+        except Exception as e:
+            self.logger.error(f"Error saving checkpoints: {str(e)}")
 
     def _log_metrics(self, mode: str, epoch: int, metrics: Dict[str, float]) -> None:
         """Log training/validation metrics
@@ -220,22 +254,27 @@ class Trainer:
             epoch: Current epoch number
             metrics: Dictionary of metrics to log
         """
-        # Log to file/console
-        metric_str = ' '.join([f'{k}={v:.4f}' for k, v in metrics.items()])
+        metric_str = ' '.join([f'{k}={v:.6f}' for k, v in metrics.items()])
         self.logger.info(f'Epoch {epoch+1} {mode}: {metric_str}')
         
-        # Update best metrics if validation
         if mode == 'val':
-            current_metric = metrics.get('accuracy', 0)
-            if current_metric > self.best_metrics['accuracy']:
-                self.best_metrics.update({
+            # Update best metrics based on multiple criteria
+            should_update = (
+                metrics['accuracy'] > self.best_metrics['accuracy'] or
+                (metrics['accuracy'] == self.best_metrics['accuracy'] and 
+                metrics['auc'] > self.best_metrics['auc'])
+            )
+            
+            if should_update:
+                self.best_metrics = {
                     'epoch': epoch,
-                    'accuracy': current_metric,
-                    'auc': metrics.get('auc', 0),
-                    'loss': metrics.get('loss', float('inf')),
-                    'tpr@fpr=0.1': metrics.get('tpr@fpr=0.01', 0),
-                    'hter': metrics.get('hter', 1.0)
-                })
+                    'accuracy': metrics['accuracy'],
+                    'auc': metrics['auc'],
+                    'loss': metrics['loss'],
+                    'tpr@fpr=0.01': metrics.get('tpr@fpr=0.01', 0),
+                    'hter': metrics.get('hter', 0),  # Fix: Initialize to 0
+                    'val_loss': metrics['loss']
+                }
 
     def _log_final_results(self, metrics: Dict[str, float]) -> None:
         """Log final evaluation results"""
@@ -243,17 +282,17 @@ class Trainer:
         with open(self.log_dir / 'final_results.txt', 'w') as f:
             f.write("Final Test Results:\n")
             for k, v in metrics.items():
-                f.write(f"{k}: {v:.4f}\n")
+                f.write(f"{k}: {v:.6f}\n")
             
             f.write("\nBest Validation Metrics:\n")  
             for k, v in self.best_metrics.items():
-                f.write(f"{k}: {v:.4f}\n")
+                f.write(f"{k}: {v:.6f}\n")
 
         # Log to console
-        metric_str = ' '.join([f'{k}={v:.4f}' for k, v in metrics.items()])
+        metric_str = ' '.join([f'{k}={v:.6f}' for k, v in metrics.items()])
         self.logger.info(f'Final test results: {metric_str}')
         
-        best_str = ' '.join([f'{k}={v:.4f}' for k, v in self.best_metrics.items()])
+        best_str = ' '.join([f'{k}={v:.6f}' for k, v in self.best_metrics.items()])
         self.logger.info(f'Best validation metrics: {best_str}')
 
     def _check_early_stopping(self, val_loss: float) -> bool:
@@ -285,62 +324,50 @@ class Trainer:
         return self.should_stop
 
     def _save_metrics_to_csv(self, metrics: Dict[str, float], mode: str, epoch: int) -> None:
-        """Save metrics to CSV file
-        
-        Args:
-            metrics: Metrics dictionary to save
-            mode: 'train' or 'val' or 'test'
-            epoch: Current epoch number
-        """
-        # Create DataFrame from metrics
-        df = pd.DataFrame([metrics])
-        
-        # Save to CSV
+        """Save metrics to CSV file only once per epoch"""
         csv_path = self.csv_dir / f"{mode}_metrics.csv"
+        
+        # Tạo DataFrame mới với epoch index
+        metrics_df = pd.DataFrame([{
+            **metrics,
+            'epoch': epoch
+        }])
+        
         if not csv_path.exists():
-            df.to_csv(csv_path, index=False)
+            metrics_df.to_csv(csv_path, index=False)
         else:
-            df.to_csv(csv_path, mode='a', header=False, index=False)
+            # Đọc file cũ và kiểm tra xem epoch đã tồn tại chưa
+            existing_df = pd.read_csv(csv_path)
+            if epoch not in existing_df['epoch'].values:
+                metrics_df.to_csv(csv_path, mode='a', header=False, index=False)
 
     def _plot_training_curves(self) -> None:
-        """Plot and save training curves"""
+        """Plot training curves with proper synchronization"""
         try:
-            # Skip optimization trial metrics
             train_df = pd.read_csv(self.csv_dir / "train_metrics.csv")
             val_df = pd.read_csv(self.csv_dir / "val_metrics.csv")
             
-            # Add epoch column if not exists
-            if 'epoch' not in train_df:
+            # Add epoch column if missing
+            if 'epoch' not in train_df.columns:
                 train_df['epoch'] = range(len(train_df))
-            if 'epoch' not in val_df:
+            if 'epoch' not in val_df.columns:
                 val_df['epoch'] = range(len(val_df))
-                
-            # Plot training curves
-            metrics_to_plot = [
-                ('loss', 'Loss'),
-                ('accuracy', 'Accuracy'), 
-                ('auc', 'AUC-ROC'),
-                ('cls_loss', 'Classification Loss'),
-                ('domain_loss', 'Domain Loss'),
-                ('contrast_loss', 'Contrastive Loss')
-            ]
 
-            for metric, title in metrics_to_plot:
-                if metric in train_df.columns and (metric in val_df.columns or metric.startswith('cls_')):
-                    plt.figure(figsize=(10, 6))
-                    plt.plot(train_df['epoch'], train_df[metric], label='Train')
-                    if metric in val_df.columns:  # Only plot validation for main metrics
-                        plt.plot(val_df['epoch'], val_df[metric], label='Validation')
-                    plt.title(f'{title} vs Epoch')
-                    plt.xlabel('Epoch')
-                    plt.ylabel(title)
-                    plt.legend()
-                    plt.grid(True)
-                    plt.savefig(self.plot_dir / f'{metric}_curve.png')
-                    plt.close()
+            # Plot metrics
+            for metric, title in [('loss', 'Loss'), ('accuracy', 'Accuracy'), ('auc', 'AUC-ROC'), ('hter', 'HTER')]:
+                plt.figure(figsize=(10, 6))
+                plt.plot(train_df['epoch'], train_df[metric], 'b-', label='Train')
+                plt.plot(val_df['epoch'], val_df[metric], 'r-', label='Validation')
+                plt.xlabel('Epoch')
+                plt.ylabel(title)
+                plt.title(f'{title} vs. Epoch')
+                plt.legend()
+                plt.grid(True)
+                plt.savefig(self.plot_dir / f'{metric}_curve.png')
+                plt.close()
 
         except Exception as e:
-            self.logger.warning(f"Failed to plot training curves: {str(e)}")
+            self.logger.warning(f"Failed to plot curves: {str(e)}")
 
     def setup_directories(self) -> None:
         """Create necessary directories"""
@@ -355,16 +382,24 @@ class Trainer:
 
     def setup_logging(self) -> None:
         """Setup logging configuration"""
+        # Make sure log directory exists
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         log_file = self.log_dir / 'training.log'
+        
+        # Configure logging
         logging.basicConfig(
             format='%(asctime)s - %(levelname)s - %(message)s',
             level=logging.INFO,
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler()
-            ]
+            force=True  # Force reconfiguration
         )
+        
+        # Create file handler
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        
+        # Create logger and add handlers
         self.logger = logging.getLogger(__name__)
+        self.logger.addHandler(file_handler)
 
     def train_epoch(self, epoch: int) -> Dict[str, float]:
         """Train for one epoch
@@ -378,72 +413,67 @@ class Trainer:
         try:
             self.model.train()
             metrics = self._init_metrics()
-            all_labels, all_scores = [], []  # Thêm để tính AUC
+            all_labels, all_scores = [], []
             
             # Update lambda for GRL
             self.lambda_val = min(1.0, epoch / self.config.num_epochs)
             
             pbar = tqdm(self.train_loader, desc=f'Epoch {epoch+1}/{self.config.num_epochs}')
             
+            # Fix: Chỉ lưu metrics một lần cho mỗi epoch
             for batch_idx, batch in enumerate(pbar):
                 batch_metrics = self._train_step(batch)
                 self._update_metrics(metrics, batch_metrics)
                 self._update_progress(pbar, metrics)
-                self.global_step += 1
                 
-                # Collect predictions for AUC calculation
+                # Collect predictions
                 images, _, labels, _ = batch
                 with torch.no_grad():
                     pred, _ = self.model(images.to(self.device))
                     pred = torch.sigmoid(pred.view(pred.size(0), -1).mean(dim=1))
                     all_labels.extend(labels.cpu().numpy())
                     all_scores.extend(pred.cpu().numpy())
-
-                if 'on_batch_end' in self.callbacks:
-                    self.callbacks['on_batch_end'](self, batch_metrics)
-
-            # Calculate epoch averages
+                    
+            # Finalize metrics once per epoch
             metrics = self._finalize_metrics(metrics)
-            
-            # Add AUC metric
             metrics.update(self.calculate_metrics(np.array(all_labels), np.array(all_scores)))
             
+            # Save metrics once
             self._log_metrics('train', epoch, metrics)
             self._save_metrics_to_csv(metrics, 'train', epoch)
             
             return metrics
+            
         except Exception as e:
             self.logger.error(f"Error in training epoch {epoch}: {str(e)}")
             raise
 
     def _train_step(self, batch) -> Dict[str, float]:
         """Execute one training step"""
-        # Unpack and reshape batch correctly
         images, depth_maps, labels, domains = batch
         
-        images = images.to(self.device)  # [B,C,H,W]
-        depth_maps = depth_maps.to(self.device)  # [B,1,H,W] 
-        labels = labels.to(self.device)  # [B]
-        domains = domains.to(self.device)  # [B]
+        images = images.to(self.device)
+        depth_maps = depth_maps.to(self.device)
+        labels = labels.to(self.device)
+        domains = domains.to(self.device)
 
-        # Mixed precision forward pass
         with autocast(device_type='cuda' if self.device=='cuda' else 'cpu'):
+            # Forward pass
             pred, domain_pred, feat_orig, feat_style, contrast_labels = \
                 self.model.shuffle_style_assembly(images, labels, domains, self.lambda_val)
             
-            # Fix: Average spatial dimensions for prediction
-            pred = F.adaptive_avg_pool2d(pred, 1).squeeze(-1).squeeze(-1)  # [B]
+            # Fix: Reshape prediction tensor correctly
+            pred = pred.view(pred.size(0), -1).mean(dim=1)  # Average over spatial dimensions
             
-            losses = self._compute_losses(pred, domain_pred, labels, domains,
+            losses = self._compute_losses(pred, domain_pred, labels, domains, 
                                         feat_orig, feat_style, contrast_labels)
 
-        # Optimize using raw tensor loss
+        # Optimize
         self.optimizer.zero_grad()
         self.scaler.scale(losses['total']).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
 
-        # Return loss values for metrics
         return {
             'loss': losses['total'].item(),
             'cls_loss': losses['cls_loss'],
@@ -478,47 +508,36 @@ class Trainer:
         try:
             self.logger.info("Starting training...")
             
-            # Training loop
             for epoch in range(self.config.num_epochs):
-                self.current_epoch = epoch
-                
-                # Call epoch start callback
-                if 'on_epoch_start' in self.callbacks:
-                    self.callbacks['on_epoch_start'](self, epoch)
-                
-                # Train and evaluate  
+                # Train
                 train_metrics = self.train_epoch(epoch)
-                val_metrics = self.evaluate(self.val_loader, mode='val')
-
-                # Save metrics to CSV
                 self._save_metrics_to_csv(train_metrics, 'train', epoch)
+                
+                # Validation
+                val_metrics = self.evaluate(self.val_loader, mode='val')
                 self._save_metrics_to_csv(val_metrics, 'val', epoch)
                 
-                # Update learning rate
+                # Log metrics
+                self._log_metrics('train', epoch, train_metrics)
+                self._log_metrics('val', epoch, val_metrics)
+                
+                # Update scheduler
                 self.scheduler.step()
                 
-                # Check early stopping
+                # Save checkpoints và plot
+                self._save_checkpoints(epoch, val_metrics)
+                self._plot_training_curves()
+                
+                # Early stopping check
                 if self._check_early_stopping(val_metrics['loss']):
                     break
                     
-                # Save checkpoints
-                self._save_checkpoints(epoch, val_metrics)
-                
-                # Plot training curves
-                self._plot_training_curves()
-                
-                # Call epoch end callback
-                if 'on_epoch_end' in self.callbacks:
-                    self.callbacks['on_epoch_end'](self, train_metrics, val_metrics)
-                
             # Final evaluation
-            self.logger.info("Training completed. Running final evaluation...") 
             test_metrics = self.evaluate(self.test_loader, mode='test')
-            self._save_metrics_to_csv(test_metrics, 'test', self.current_epoch)
             self._log_final_results(test_metrics)
-
+            
             return self.best_metrics
 
         except Exception as e:
-            self.logger.error(f"Training failed: {str(e)}")
+            self.logger.error(f"Error in training: {str(e)}")
             raise

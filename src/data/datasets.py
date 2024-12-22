@@ -258,6 +258,13 @@ class FASDataset(Dataset):
         return len(self.cached_paths)
 
     def __getitem__(self, idx):
+        # Convert idx to integer
+        idx = int(idx)  # Add this line
+        
+        # Make sure idx is within bounds
+        if idx >= len(self.cached_paths):
+            raise IndexError("Index out of bounds")
+            
         row = self.data.iloc[idx]
         cached = self.cached_paths[idx]
         

@@ -234,7 +234,6 @@ def main():
         
         if args.auto_hp:
             print("\nStarting hyperparameter optimization...")
-            print(f"Will run {args.hp_trials} trials with {args.hp_timeout}s timeout")
             
             hp_optimizer = HyperparameterOptimizer(
                 model_class=SSAN,
@@ -249,15 +248,19 @@ def main():
             )
             
             best_params = hp_optimizer.optimize()
-            print("\nBest hyperparameters found:")
-            for param, value in best_params.items():
-                print(f"  {param}: {value}")
-                setattr(config, param, value)
             
-            # Recreate everything with optimized parameters
-            if 'batch_size' in best_params:
-                print("\nRecreating dataloaders with optimal batch size...")
-                dataloaders = get_dataloaders(config)
+            if best_params:  # Only update if we got valid parameters
+                print("\nBest hyperparameters found:")
+                for param, value in best_params.items():
+                    print(f"  {param}: {value}")
+                    setattr(config, param, value)
+                
+                # Recreate everything with optimized parameters
+                if 'batch_size' in best_params:
+                    print("\nRecreating dataloaders with optimal batch size...")
+                    dataloaders = get_dataloaders(config)
+            else:
+                print("\nNo optimal parameters found, using default values")
 
         # Initialize model AFTER hyperparameter optimization
         print("\nInitializing model and training components...")

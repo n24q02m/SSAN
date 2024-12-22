@@ -48,7 +48,7 @@ class Predictor:
             # Plot
             plt.figure(figsize=(10, 6))
             plt.plot(fpr, tpr, color='darkorange', lw=2, 
-                    label=f'ROC curve (AUC = {roc_auc:0.2f})')
+                    label=f'ROC curve (AUC = {roc_auc:0.6f})')
             plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
             plt.xlim([0.0, 1.0])
             plt.ylim([0.0, 1.05])
@@ -204,7 +204,7 @@ class Predictor:
         """
         self.logger.info("Inference Results:")
         for name, value in metrics.items():
-            self.logger.info(f"{name}: {value:.4f}")
+            self.logger.info(f"{name}: {value:.6f}")
 
     def save_results(self, results: Dict[str, np.ndarray], metrics: Dict[str, float]) -> None:
         """Save prediction results, metrics and plots
