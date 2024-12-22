@@ -30,6 +30,9 @@ class TestMain:
             device = 'cpu'
             num_workers = 0
             debug_fraction = 1.0
+            auto_hp = False
+            hp_trials = 2
+            hp_timeout = 60
             
         self.args = Args()
         
@@ -102,6 +105,193 @@ class TestMain:
         scheduler = get_scheduler(optimizer, self.config)
         assert isinstance(scheduler, lr_scheduler.CosineAnnealingWarmRestarts)
 
+    def test_auto_hyperparameter_optimization(self, setup):
+        """Test automatic hyperparameter optimization"""
+        self.args.auto_hp = True
+        self.args.hp_trials = 2
+        self.args.hp_timeout = 60
+        
+        with patch('src.main.parse_args', return_value=self.args), \
+            patch('src.main.get_dataloaders') as mock_get_dataloaders, \
+            patch('src.main.HyperparameterOptimizer') as mock_hp_optimizer, \
+            patch('src.main.Trainer') as mock_trainer:
+
+            # Mock dataloaders with sample batch
+            mock_train_loader = MagicMock()
+            mock_train_loader.__iter__.return_value = iter([
+                (torch.randn(4, 3, 256, 256),  # Images
+                torch.randn(4, 1, 32, 32),    # Depth maps
+                torch.randint(0, 2, (4,)),    # Labels
+                torch.randint(0, 5, (4,)))    # Domain labels
+            ])
+            
+            mock_val_loader = MagicMock()
+            mock_test_loader = MagicMock()
+            
+            mock_get_dataloaders.return_value = {
+                'train': mock_train_loader,
+                'val': mock_val_loader,
+                'test': mock_test_loader
+            }
+            
+            # Mock hyperparameter optimization results
+            mock_hp_optimizer_instance = MagicMock()
+            mock_hp_optimizer_instance.optimize.return_value = {
+                'learning_rate': 0.001,
+                'weight_decay': 1e-5,
+                'lambda_adv': 0.1,
+                'lambda_contrast': 0.1,
+                'optimizer': 'adam',
+                'scheduler': 'step',
+                'dropout': 0.2
+            }
+            mock_hp_optimizer.return_value = mock_hp_optimizer_instance
+            
+            # Mock trainer
+            mock_trainer_instance = MagicMock()
+            mock_trainer_instance.train.return_value = {'accuracy': 0.9, 'auc': 0.95}
+            mock_trainer.return_value = mock_trainer_instance
+            
+            main()
+            
+            # Verify hyperparameter optimization was run
+            mock_hp_optimizer.assert_called_once()
+            mock_hp_optimizer_instance.optimize.assert_called_once()
+            
+            # Verify trainer was initialized with optimized parameters  
+            mock_trainer.assert_called_once()
+            _, kwargs = mock_trainer.call_args
+            assert kwargs['config'].learning_rate == 0.001
+            assert kwargs['config'].dropout == 0.2
+            
+            # Verify training was executed
+            assert mock_trainer_instance.train.called
+
+    def test_dataset_loading(self, setup):
+        """Test dataset loading and processing in main"""
+        self.args.mode = 'train'
+        self.args.protocol = 'protocol_1'
+        self.args.batch_size = 4  # Set fixed batch size
+        self.args.num_workers = 4  # Set fixed workers
+        
+        with patch('src.main.parse_args', return_value=self.args), \
+            patch('src.main.get_dataloaders') as mock_get_dataloaders, \
+            patch('src.main.Trainer') as mock_trainer:
+
+            # Mock dataset loading
+            mock_train_loader = MagicMock()
+            mock_train_loader.__iter__.return_value = iter([
+                (
+                    torch.randn(4, 3, 256, 256),      # Images
+                    torch.randn(4, 1, 32, 32),        # Depth maps
+                    torch.randint(0, 2, (4,)),        # Labels
+                    torch.randint(0, 5, (4,))         # Domain labels
+                )
+            ])
+
+            mock_get_dataloaders.return_value = {
+                'train': mock_train_loader,
+                'val': MagicMock(),
+                'test': MagicMock()
+            }
+
+            # Mock trainer
+            mock_trainer_instance = MagicMock()
+            mock_trainer_instance.train.return_value = {'accuracy': 0.9}
+            mock_trainer.return_value = mock_trainer_instance
+
+            main()
+
+            # Verify dataloaders were created with correct config
+            assert mock_get_dataloaders.call_count == 1
+            config = mock_get_dataloaders.call_args[0][0]
+            
+            # Check protocol specific settings
+            assert config.protocol == 'protocol_1'
+            assert hasattr(config, 'img_size')
+            assert hasattr(config, 'depth_map_size')
+
+    def test_debug_dataset_loading(self, setup):
+        """Test dataset loading with debug fraction"""
+        self.args.mode = 'train' 
+        self.args.debug_fraction = 0.1
+        self.args.batch_size = 4  # Set fixed batch size
+        self.args.num_workers = 4  # Set fixed workers
+
+        with patch('src.main.parse_args', return_value=self.args), \
+            patch('src.main.get_dataloaders') as mock_get_dataloaders, \
+            patch('src.main.Trainer') as mock_trainer:
+
+            mock_train_loader = MagicMock()
+            mock_train_loader.__iter__.return_value = iter([
+                (
+                    torch.randn(4, 3, 256, 256),
+                    torch.randn(4, 1, 32, 32),
+                    torch.randint(0, 2, (4,)),
+                    torch.randint(0, 5, (4,))
+                )
+            ])
+
+            mock_get_dataloaders.return_value = {
+                'train': mock_train_loader,
+                'val': MagicMock(),
+                'test': MagicMock()
+            }
+
+            # Mock trainer
+            mock_trainer_instance = MagicMock()
+            mock_trainer_instance.train.return_value = {'accuracy': 0.9}
+            mock_trainer.return_value = mock_trainer_instance
+
+            main()
+
+            assert mock_get_dataloaders.call_count == 1
+            config = mock_get_dataloaders.call_args[0][0]
+            assert config.debug_fraction == 0.1
+
+    def test_protocol_specific_dataset_loading(self, setup):
+        """Test dataset loading for different protocols"""
+        protocols = ['protocol_1', 'protocol_2', 'protocol_3', 'protocol_4']
+        
+        for protocol in protocols:
+            self.args.mode = 'train'
+            self.args.protocol = protocol
+            self.args.batch_size = 4  # Set fixed batch size  
+            self.args.num_workers = 4  # Set fixed workers
+        
+            with patch('src.main.parse_args', return_value=self.args), \
+                patch('src.main.get_dataloaders') as mock_get_dataloaders, \
+                patch('src.main.Trainer') as mock_trainer:
+
+                mock_train_loader = MagicMock()
+                mock_train_loader.__iter__.return_value = iter([
+                    (
+                        torch.randn(4, 3, 256, 256),
+                        torch.randn(4, 1, 32, 32),
+                        torch.randint(0, 2, (4,)),
+                        torch.randint(0, 5, (4,))
+                    )
+                ])
+
+                mock_get_dataloaders.return_value = {
+                    'train': mock_train_loader,
+                    'val': MagicMock(),
+                    'test': MagicMock()
+                }
+
+                # Mock trainer
+                mock_trainer_instance = MagicMock()
+                mock_trainer_instance.train.return_value = {'accuracy': 0.9}
+                mock_trainer.return_value = mock_trainer_instance
+
+                main()
+
+                assert mock_get_dataloaders.call_count == 1
+                config = mock_get_dataloaders.call_args[0][0]
+                assert config.protocol == protocol
+
+                mock_get_dataloaders.reset_mock()
+
     def test_debug_fraction(self, setup):
         """Test debug fraction functionality"""
         self.args.debug_fraction = 0.1  # Set to use 10% data
@@ -145,7 +335,8 @@ class TestMain:
              patch('src.main.get_dataloaders') as mock_get_dataloaders, \
              patch('src.main.Trainer') as mock_trainer, \
              patch('src.main.find_optimal_batch_size', return_value=4), \
-             patch('src.main.find_optimal_workers', return_value=2):
+             patch('src.main.find_optimal_workers', return_value=2), \
+             patch('src.main.HyperparameterOptimizer', return_value=MagicMock()):
             
             # Mock dataloaders with non-empty iterator
             mock_train_loader = MagicMock()
