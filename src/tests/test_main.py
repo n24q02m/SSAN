@@ -27,6 +27,7 @@ class TestMain:
             scheduler = 'step'
             device = 'cpu'
             num_workers = 0
+            debug_fraction = 1.0
             
         self.args = Args()
         
@@ -99,6 +100,43 @@ class TestMain:
         scheduler = get_scheduler(optimizer, self.config)
         assert isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingWarmRestarts)
 
+    def test_debug_fraction(self, setup):
+        """Test debug fraction functionality"""
+        self.args.debug_fraction = 0.1  # Set to use 10% data
+        self.args.batch_size = 4
+        self.args.num_workers = 4
+        
+        with patch('src.main.parse_args', return_value=self.args), \
+            patch('src.main.get_dataloaders') as mock_get_dataloaders, \
+            patch('src.main.Trainer') as mock_trainer, \
+            patch('src.main.find_optimal_batch_size', return_value=4), \
+            patch('src.main.find_optimal_workers', return_value=4):
+            
+            # Mock dataloader với sample batch
+            mock_train_loader = MagicMock()
+            mock_train_loader.__iter__.return_value = iter([
+                (torch.randn(4, 3, 256, 256),  # Images
+                torch.randn(4, 1, 32, 32),    # Depth maps
+                torch.randint(0, 2, (4,)),    # Labels
+                torch.randint(0, 5, (4,)))    # Domain labels
+            ])
+            
+            mock_get_dataloaders.return_value = {
+                'train': mock_train_loader,
+                'val': MagicMock(),
+                'test': MagicMock()
+            }
+            
+            mock_trainer_instance = MagicMock()
+            mock_trainer.return_value = mock_trainer_instance
+            
+            main()
+            
+            # Verify debug_fraction was set in config
+            mock_get_dataloaders.assert_called_once()
+            config = mock_get_dataloaders.call_args[0][0]
+            assert config.debug_fraction == 0.1
+
     def test_main_train_mode(self):
         """Test main function in training mode""" 
         with patch('src.main.parse_args', return_value=self.args), \
@@ -135,43 +173,95 @@ class TestMain:
             
     def test_main_test_mode(self):
         """Test main function in test mode"""
+        # Case 1: Test with checkpoint file
         self.args.mode = 'test'
         self.args.checkpoint = 'model.pth'
+        self.args.batch_size = 4
+        self.args.num_workers = 4
+        
+        mock_path = MagicMock(spec=Path)
+        mock_path.exists.return_value = True
+        mock_path.parent = mock_path
+        mock_path.stem = "test_image"
         
         with patch('src.main.parse_args', return_value=self.args), \
-             patch('src.main.get_dataloaders') as mock_get_dataloaders, \
-             patch('src.main.Predictor') as mock_predictor, \
-             patch('src.main.find_optimal_batch_size', return_value=4), \
-             patch('src.main.find_optimal_workers', return_value=2):
-
-            # Mock dataloaders with non-empty iterator  
-            mock_train_loader = MagicMock()
-            mock_train_loader.__iter__.return_value = iter([
-                (torch.randn(4, 3, 256, 256),
-                 torch.randn(4, 1, 32, 32),
-                 torch.randint(0, 2, (4,)),
-                 torch.randint(0, 5, (4,)))
+            patch('src.main.get_dataloaders') as mock_get_dataloaders, \
+            patch('src.main.Predictor') as mock_predictor, \
+            patch('pathlib.Path.glob') as mock_glob, \
+            patch('pathlib.Path.__truediv__', return_value=mock_path):
+            
+            # Mock glob để trả về đường dẫn ảnh giả
+            mock_glob.return_value = iter([mock_path])
+            
+            # Mock test_loader với data giả
+            mock_test_loader = MagicMock()
+            mock_test_loader.__iter__.return_value = iter([
+                (torch.randn(4, 3, 256, 256),  # Images
+                torch.randn(4, 1, 32, 32),    # Depth maps
+                torch.randint(0, 2, (4,)),    # Labels
+                torch.randint(0, 5, (4,)))    # Domain labels
             ])
-
+            
             mock_get_dataloaders.return_value = {
-                'train': mock_train_loader,
-                'val': MagicMock(), 
-                'test': MagicMock()
+                'train': MagicMock(),
+                'val': MagicMock(),
+                'test': mock_test_loader
             }
             
-            # Mock predictor
             mock_predictor_instance = MagicMock()
-            mock_predictor_instance.predict.return_value = {
-                'predictions': [0, 1, 0],
-                'probabilities': [0.1, 0.9, 0.2]
-            }
             mock_predictor.from_checkpoint.return_value = mock_predictor_instance
             
             main()
             
-            # Verify predictor was initialized and called
-            assert mock_predictor.from_checkpoint.called
+            # Verify predictor initialization và predictions
+            mock_predictor.from_checkpoint.assert_called_once()
             assert mock_predictor_instance.predict.called
+
+        # Case 2: Test with checkpoint directory
+        self.args.checkpoint = 'checkpoints/'
+        mock_path = MagicMock(spec=Path)
+        mock_path.exists.return_value = True
+        mock_path.parent = mock_path
+        mock_path.stem = "test_image"
+        
+        with patch('src.main.parse_args', return_value=self.args), \
+            patch('src.main.get_dataloaders') as mock_get_dataloaders, \
+            patch('src.main.Predictor') as mock_predictor, \
+            patch('pathlib.Path.glob') as mock_glob, \
+            patch('pathlib.Path.__truediv__', return_value=mock_path):
+            
+            # Mock glob
+            mock_glob.return_value = iter([mock_path])
+            
+            mock_get_dataloaders.return_value = {
+                'train': MagicMock(),
+                'val': MagicMock(),
+                'test': MagicMock()
+            }
+            
+            mock_predictor_instance = MagicMock()
+            mock_predictor.from_checkpoint.return_value = mock_predictor_instance
+            
+            main()
+            
+            mock_predictor.from_checkpoint.assert_called_once()
+
+        # Case 3: Test without checkpoint path 
+        self.args.checkpoint = None
+        
+        with patch('src.main.parse_args', return_value=self.args), \
+            patch('src.main.get_dataloaders') as mock_get_dataloaders:
+            
+            # Mock dataloaders
+            mock_get_dataloaders.return_value = {
+                'train': MagicMock(),
+                'val': MagicMock(),
+                'test': MagicMock()
+            }
+            
+            with pytest.raises(ValueError) as excinfo:
+                main()
+            assert "Checkpoint path required for test mode" in str(excinfo.value)
 
     def test_main_error_handling(self, setup):
         """Test error handling in main"""
