@@ -12,28 +12,122 @@ from .runner.predictor import Predictor
 from .runner.optimizers import find_optimal_batch_size, find_optimal_workers
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description='SSAN Training and Testing',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter  # Hiển thị giá trị mặc định
+    )
     
     # Basic configs
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'])
-    parser.add_argument('--protocol', type=str, required=True, choices=['protocol_1', 'protocol_2', 'protocol_3', 'protocol_4'])
-    parser.add_argument('--checkpoint', type=str, help='Path to checkpoint for testing')
-    
-    # Training configs 
-    parser.add_argument('--epochs', type=int, help='Override default epochs')
-    parser.add_argument('--lr', type=float, help='Override default learning rate')
-    parser.add_argument('--batch_size', type=int, help='Override default batch size')
-    parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'])
-    parser.add_argument('--scheduler', type=str, choices=['step', 'cosine'])
-    
+    basic_group = parser.add_argument_group('Basic configurations')
+    basic_group.add_argument(
+        '--mode', type=str, default='train',
+        choices=['train', 'test'],
+        help='Running mode: train model or test with checkpoint'
+    )
+    basic_group.add_argument(
+        '--protocol', type=str, required=True,
+        choices=['protocol_1', 'protocol_2', 'protocol_3', 'protocol_4'],
+        help='''Training protocol:
+                protocol_1: Single dataset (CelebA-Spoof)
+                protocol_2: Multi-dataset (CelebA-Spoof + CATI-FAS)
+                protocol_3: Cross-dataset evaluation
+                protocol_4: Domain generalization'''
+    )
+    basic_group.add_argument(
+        '--checkpoint', type=str,
+        help='Path to checkpoint file for testing'
+    )
+
+    # Training configs
+    train_group = parser.add_argument_group('Training configurations') 
+    train_group.add_argument(
+        '--epochs', type=int,
+        help='Number of training epochs (default: from config)'
+    )
+    train_group.add_argument(
+        '--lr', type=float,
+        help='Learning rate (default: from config)'
+    )
+    train_group.add_argument(
+        '--batch_size', type=int,
+        help='Batch size (default: auto)'
+    )
+    train_group.add_argument(
+        '--optimizer', type=str,
+        choices=['adam', 'sgd'],
+        help='Optimizer type (default: from config)'
+    )
+    train_group.add_argument(
+        '--scheduler', type=str,
+        choices=['step', 'cosine'],
+        help='Learning rate scheduler (default: from config)'
+    )
+
     # Device configs
-    parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--num_workers', type=int, help='Override default workers')
-    
+    device_group = parser.add_argument_group('Device configurations')
+    device_group.add_argument(
+        '--device', type=str, default='cuda',
+        help='Device to run on (cuda/cpu)'
+    )
+    device_group.add_argument(
+        '--num_workers', type=int,
+        help='Number of data loading workers (default: auto)'
+    )
+
     # Debug configs
-    parser.add_argument('--debug_fraction', type=float, default=1.0, help='Fraction of data to use (0-1)')
+    debug_group = parser.add_argument_group('Debug configurations')
+    debug_group.add_argument(
+        '--debug_fraction', type=float, default=1.0,
+        help='Fraction of data to use (0-1)'
+    )
+
+    # Short config aliases
+    basic_group.add_argument(
+        '-m', '--mode_short', dest='mode',
+        type=str, choices=['train', 'test'],
+        help='Short for --mode'
+    )
+    basic_group.add_argument(
+        '-p', '--protocol_short', dest='protocol',
+        type=str, choices=['p1', 'p2', 'p3', 'p4'],
+        help='Short for --protocol (p1=protocol_1, etc)'
+    )
+    train_group.add_argument(
+        '-e', '--epochs_short', dest='epochs',
+        type=int, help='Short for --epochs'
+    )
+    train_group.add_argument(
+        '-b', '--batch_short', dest='batch_size',
+        type=int, help='Short for --batch_size'
+    )
+
+    args = parser.parse_args()
+
+    # Convert short protocol names to full names
+    if args.protocol in ['p1', 'p2', 'p3', 'p4']:
+        args.protocol = f"protocol_{args.protocol[1]}"
+
+    return args
+
+def print_config(args, config):
+    """Print configuration settings"""
+    print("\n=== Configuration ===")
+    print(f"Mode: {args.mode}")
+    print(f"Protocol: {args.protocol}")
+    print(f"Device: {args.device}")
     
-    return parser.parse_args()
+    if args.mode == 'train':
+        print("\nTraining settings:")
+        print(f"- Epochs: {config.num_epochs}")
+        print(f"- Learning rate: {config.learning_rate}")
+        print(f"- Batch size: {config.batch_size}")
+        print(f"- Optimizer: {config.optimizer}")
+        print(f"- Scheduler: {config.scheduler}")
+        print(f"- Workers: {config.num_workers}")
+    
+    if args.debug_fraction < 1.0:
+        print(f"\nDebug mode: Using {args.debug_fraction*100:.1f}% of data")
+    print("===================\n")
 
 def set_seed(seed):
     random.seed(seed)
@@ -96,6 +190,9 @@ def main():
         config.scheduler = args.scheduler
     if args.num_workers:
         config.num_workers = args.num_workers
+
+    # Print configuration
+    print_config(args, config)
         
     # Set random seed
     set_seed(config.seed)
