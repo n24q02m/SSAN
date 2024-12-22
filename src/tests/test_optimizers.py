@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import pytest
 import torch
 from pathlib import Path
@@ -8,11 +9,7 @@ from torch.utils.data import DataLoader
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.model.ssan import SSAN
-from src.runner.optimizers import (
-    find_optimal_batch_size, 
-    find_optimal_workers,
-    HyperparameterOptimizer
-)
+from src.runner.optimizers import find_optimal_batch_size, find_optimal_workers, HyperparameterOptimizer
 
 class TestOptimizers:
     @pytest.fixture
@@ -157,7 +154,6 @@ class TestOptimizers:
     def cleanup(self):
         """Cleanup after each test"""
         yield
-        import shutil
         shutil.rmtree(self.config.output_dir, ignore_errors=True)
         
 if __name__ == '__main__':

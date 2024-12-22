@@ -1,6 +1,7 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from torch.nn import Module, functional as F
+from torch.utils.data import DataLoader
+from torch.optim import Optimizer, lr_scheduler
 from tqdm import tqdm
 import numpy as np
 from pathlib import Path
@@ -10,19 +11,20 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
+from sklearn.metrics import roc_auc_score, roc_curve
 
 class Trainer:
     """SSAN Trainer with mixed precision training and comprehensive metrics tracking"""
     
     def __init__(
         self,
-        model: nn.Module,
-        train_loader: torch.utils.data.DataLoader,
-        val_loader: torch.utils.data.DataLoader,
-        test_loader: torch.utils.data.DataLoader,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler._LRScheduler,
-        criterion: Dict[str, nn.Module],
+        model: Module,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        test_loader: DataLoader,
+        optimizer: Optimizer,
+        scheduler: lr_scheduler._LRScheduler,
+        criterion: Dict[str, Module],
         config: Any,
         device: str,
         callbacks: Optional[Dict[str, callable]] = None
@@ -150,9 +152,7 @@ class Trainer:
             return labels.cpu(), scores.cpu()
 
     def calculate_metrics(self, labels: np.ndarray, scores: np.ndarray) -> Dict[str, float]:
-        """Calculate evaluation metrics"""
-        from sklearn.metrics import roc_auc_score, roc_curve
-        
+        """Calculate evaluation metrics"""        
         # Calculate AUC
         auc = roc_auc_score(labels, scores)
         
@@ -423,7 +423,7 @@ class Trainer:
             'accuracy': self._compute_accuracy(pred, labels)
         }
     
-    def evaluate(self, loader: torch.utils.data.DataLoader, mode: str = 'val') -> Dict[str, float]:
+    def evaluate(self, loader: DataLoader, mode: str = 'val') -> Dict[str, float]:
         """Evaluate model on given data loader
         
         Args:

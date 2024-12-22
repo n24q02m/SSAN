@@ -1,8 +1,10 @@
 import os
 import sys
+import shutil
 import pandas as pd
 import pytest
 import torch
+from torch.utils.data import DataLoader
 import numpy as np
 from pathlib import Path
 import matplotlib
@@ -61,7 +63,7 @@ class TestPredictor:
                 torch.randint(0, self.num_domains, ()).long()  # Random domain
             ))
             
-        return torch.utils.data.DataLoader(
+        return DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=False,
@@ -247,7 +249,6 @@ class TestPredictor:
     def cleanup(self):
         """Cleanup after each test"""
         yield
-        import shutil
         shutil.rmtree(self.output_dir, ignore_errors=True)
 
 if __name__ == '__main__':

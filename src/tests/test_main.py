@@ -2,6 +2,8 @@ import os
 import sys
 import pytest
 import torch
+from torch.optim import Adam, SGD, lr_scheduler
+import shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -73,32 +75,32 @@ class TestMain:
         self.config.learning_rate = 0.001
         self.config.weight_decay = 0.0001
         optimizer = get_optimizer(model, self.config)
-        assert isinstance(optimizer, torch.optim.Adam)
+        assert isinstance(optimizer, Adam)
         
         # Test SGD
         self.config.optimizer = 'sgd'
         self.config.momentum = 0.9
         optimizer = get_optimizer(model, self.config)
-        assert isinstance(optimizer, torch.optim.SGD)
+        assert isinstance(optimizer, SGD)
 
     def test_get_scheduler(self, setup):
         """Test scheduler creation"""
         model = SSAN(num_domains=self.config.num_domains)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        optimizer = Adam(model.parameters(), lr=0.001)
         
         # Test StepLR
         self.config.scheduler = 'step'
         self.config.step_size = 10
         self.config.gamma = 0.1
         scheduler = get_scheduler(optimizer, self.config)
-        assert isinstance(scheduler, torch.optim.lr_scheduler.StepLR)
+        assert isinstance(scheduler, lr_scheduler.StepLR)
         
         # Test CosineAnnealingWarmRestarts
         self.config.scheduler = 'cosine'
         self.config.warmup_epochs = 5
         self.config.min_lr = 1e-6
         scheduler = get_scheduler(optimizer, self.config)
-        assert isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingWarmRestarts)
+        assert isinstance(scheduler, lr_scheduler.CosineAnnealingWarmRestarts)
 
     def test_debug_fraction(self, setup):
         """Test debug fraction functionality"""
@@ -296,7 +298,6 @@ class TestMain:
     def cleanup(self, setup):
         """Cleanup after each test"""
         yield
-        import shutil
         shutil.rmtree(self.config.output_dir, ignore_errors=True)
 
 if __name__ == '__main__':

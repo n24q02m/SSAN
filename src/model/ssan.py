@@ -5,8 +5,7 @@ import torch.nn as nn
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from src.model.components import (FeatureGenerator, ContentExtractor, StyleExtractor, 
-                        AdaIN, Classifier, DomainDiscriminator)
+from src.model.components import FeatureGenerator, ContentExtractor, StyleExtractor, AdaIN, Classifier, DomainDiscriminator
 
 class SSAN(nn.Module):
     """Shuffled Style Assembly Network (SSAN) for Face Anti-Spoofing"""

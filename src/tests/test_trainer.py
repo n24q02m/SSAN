@@ -1,9 +1,12 @@
 import os
 import sys
+import shutil
 import numpy as np
 import pandas as pd
 import pytest
 import torch
+from torch.optim import Adam, lr_scheduler
+from torch.utils.data import DataLoader
 import matplotlib
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -44,8 +47,8 @@ class TestTrainer:
         
         # Model and optimizer
         self.model = SSAN(num_domains=self.num_domains)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1)
+        self.optimizer = Adam(self.model.parameters(), lr=0.001)
+        self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=1)
         
         # Loss functions
         self.criterion = {
@@ -84,7 +87,7 @@ class TestTrainer:
                 torch.randint(0, self.num_domains, ()).long()  # Random domain - Changed to create scalar
             ))
             
-        return torch.utils.data.DataLoader(
+        return DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=False,
@@ -256,7 +259,6 @@ class TestTrainer:
     def cleanup(self):
         """Cleanup after each test"""
         yield
-        import shutil
         shutil.rmtree(self.config.output_dir, ignore_errors=True)
 
 if __name__ == '__main__':

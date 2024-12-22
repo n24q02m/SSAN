@@ -2,20 +2,22 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import pandas as pd
 import torch
-import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from torch.nn import Module, functional as F
 import numpy as np
 from pathlib import Path
 import logging
 from tqdm import tqdm
 from typing import Dict, Optional, Tuple
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, auc
 
 class Predictor:
     """SSAN model predictor for inference"""
 
     def __init__(
         self,
-        model: torch.nn.Module, 
-        test_loader: torch.utils.data.DataLoader,
+        model: Module, 
+        test_loader: DataLoader,
         device: str,
         output_dir: Optional[Path] = None
     ):
@@ -39,8 +41,6 @@ class Predictor:
     def _plot_roc_curve(self, labels: np.ndarray, scores: np.ndarray) -> None:
         """Plot and save ROC curve"""
         try:
-            from sklearn.metrics import roc_curve, auc
-            
             # Calculate ROC curve
             fpr, tpr, _ = roc_curve(labels, scores)
             roc_auc = auc(fpr, tpr)
@@ -172,7 +172,6 @@ class Predictor:
         Returns:
             Dictionary of metrics
         """
-        from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve
         
         preds = results['predictions']
         probs = results['probabilities'] 
