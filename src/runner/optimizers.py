@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import psutil
@@ -6,19 +7,24 @@ import optuna
 import numpy as np
 from typing import Dict, Any
 from torch.utils.data import DataLoader
+from torch.nn import Module
+from torch.optim import Adam, SGD, lr_scheduler
+from torch.cuda import memory_allocated, empty_cache, get_device_properties, Event, synchronize
 import gc
 from pathlib import Path
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
+from src.runner.trainer import Trainer
 
 def find_optimal_batch_size(
-    model: torch.nn.Module,
+    model: Module,
     sample_batch: tuple,
     min_batch: int = 4,
     max_batch: int = 128,
-    max_memory_use: float = 0.85,
+    max_memory_use: float = 0.6,
 ) -> int:
     """Find optimal batch size based on GPU/CPU memory
     
@@ -39,10 +45,10 @@ def find_optimal_batch_size(
     
     # Get initial memory usage
     if device.type == 'cuda':
-        torch.cuda.empty_cache()
+        empty_cache()
         gc.collect()
-        initial_mem = torch.cuda.memory_allocated(device)
-        total_mem = torch.cuda.get_device_properties(device).total_memory
+        initial_mem = memory_allocated(device)
+        total_mem = get_device_properties(device).total_memory
     else:
         initial_mem = psutil.Process().memory_info().rss
         total_mem = psutil.virtual_memory().total
@@ -64,7 +70,7 @@ def find_optimal_batch_size(
             
             # Check memory usage
             if device.type == 'cuda':
-                used_mem = torch.cuda.memory_allocated(device) - initial_mem
+                used_mem = memory_allocated(device) - initial_mem
             else:
                 used_mem = psutil.Process().memory_info().rss - initial_mem
                 
@@ -111,8 +117,8 @@ def find_optimal_workers(
     for num_workers in workers:
         dataloader.num_workers = num_workers
         
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
+        start = Event(enable_timing=True)
+        end = Event(enable_timing=True)
         
         start.record()
         for _ in dataloader:
@@ -120,7 +126,7 @@ def find_optimal_workers(
         end.record()
         
         # Waits for everything to finish running
-        torch.cuda.synchronize()
+        synchronize()
         times.append(start.elapsed_time(end))
         
     # Find fastest number of workers
@@ -159,6 +165,9 @@ class HyperparameterOptimizer:
             load_if_exists=True
         )
         
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+
     def objective(self, trial: optuna.Trial) -> float:
         """Objective function for hyperparameter optimization"""
         # Sample hyperparameters
@@ -182,26 +191,24 @@ class HyperparameterOptimizer:
             params["warmup_epochs"] = trial.suggest_int("warmup_epochs", 5, 20)
             params["min_lr"] = trial.suggest_float("min_lr", 1e-6, 1e-4, log=True)
             
-        # Update config
+        # Update config & reinitialize training components
         for k, v in params.items():
             setattr(self.config, k, v)
-            
+
         # Initialize model, trainer etc.
-        from src.runner.trainer import Trainer
-        
         model = self.model_class(
             num_domains=self.config.num_domains,
             dropout=params["dropout"]
         ).to(self.config.device)
         
         if params["optimizer"] == "adam":
-            optimizer = torch.optim.Adam(
+            optimizer = Adam(
                 model.parameters(),
                 lr=params["learning_rate"],
                 weight_decay=params["weight_decay"]
             )
         else:
-            optimizer = torch.optim.SGD(
+            optimizer = SGD(
                 model.parameters(),
                 lr=params["learning_rate"],
                 momentum=params["momentum"],
@@ -209,13 +216,13 @@ class HyperparameterOptimizer:
             )
             
         if params["scheduler"] == "step":
-            scheduler = torch.optim.lr_scheduler.StepLR(
+            scheduler = lr_scheduler.StepLR(
                 optimizer,
                 step_size=params["step_size"],
                 gamma=params["gamma"]
             )
         else:
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            scheduler = lr_scheduler.CosineAnnealingWarmRestarts(
                 optimizer,
                 T_0=params["warmup_epochs"],
                 eta_min=params["min_lr"]
@@ -239,33 +246,56 @@ class HyperparameterOptimizer:
             device=self.config.device
         )
         
-        # Train for a few epochs
+       # Train with progress bar
         n_epochs = 5
         best_val_acc = 0
         
-        for epoch in range(n_epochs):
-            trainer.train_epoch(epoch)
-            val_metrics = trainer.evaluate(self.val_loader)
-            best_val_acc = max(best_val_acc, val_metrics["accuracy"])
-            
-            # Report intermediate values
-            trial.report(val_metrics["accuracy"], epoch)
-            
-            if trial.should_prune():
-                raise optuna.TrialPruned()
+        with tqdm(range(n_epochs), desc="Optimization epochs") as pbar:
+            for epoch in pbar:
+                train_metrics = trainer.train_epoch(epoch)
+                val_metrics = trainer.evaluate(self.val_loader)
+                best_val_acc = max(best_val_acc, val_metrics["accuracy"])
                 
+                # Update progress bar
+                pbar.set_postfix({
+                    'train_loss': f"{train_metrics['loss']:.4f}",
+                    'val_acc': f"{val_metrics['accuracy']:.4f}",
+                    'best_acc': f"{best_val_acc:.4f}"
+                })
+                
+                trial.report(val_metrics["accuracy"], epoch)
+                if trial.should_prune():
+                    self.logger.info("Trial pruned!")
+                    raise optuna.TrialPruned()
+
         return best_val_acc
         
     def optimize(self) -> Dict[str, Any]:
         """Run hyperparameter optimization"""
+        print("\nStarting hyperparameter optimization...")
+        print(f"Will run {self.n_trials} trials with {self.timeout}s timeout")
+        print("This may take a while...\n")
+
         self.study.optimize(
             self.objective,
             n_trials=self.n_trials,
-            timeout=self.timeout
+            timeout=self.timeout,
+            show_progress_bar=True
         )
         
+        # Print and save results
+        self.logger.info("\nOptimization completed!")
+        self.logger.info("\nBest trial:")
+        trial = self.study.best_trial
+        self.logger.info(f"  Value: {trial.value:.4f}")
+        self.logger.info("  Params: ")
+        for key, value in trial.params.items():
+            self.logger.info(f"    {key}: {value}")
+
         # Save results
         df = self.study.trials_dataframe()
-        df.to_csv(self.output_dir / f"{self.study_name}_results.csv")
+        results_file = self.output_dir / f"{self.study_name}_results.csv"
+        df.to_csv(results_file)
+        self.logger.info(f"\nResults saved to {results_file}")
         
         return self.study.best_params

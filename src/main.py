@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import torch
+from torch.optim import lr_scheduler, Adam, SGD
 import random
 import numpy as np
 
@@ -13,7 +14,7 @@ from src.model.ssan import SSAN
 from src.model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
 from src.runner.trainer import Trainer
 from src.runner.predictor import Predictor
-from src.runner.optimizers import find_optimal_batch_size, find_optimal_workers
+from src.runner.optimizers import HyperparameterOptimizer, find_optimal_batch_size, find_optimal_workers
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -22,13 +23,12 @@ def parse_args():
     )
     
     # Basic configs
-    basic_group = parser.add_argument_group('Basic configurations')
-    basic_group.add_argument(
+    parser.add_argument(
         '--mode', type=str, default='train',
         choices=['train', 'test'],
         help='Running mode: train model or test with checkpoint'
     )
-    basic_group.add_argument(
+    parser.add_argument(
         '--protocol', type=str, required=True,
         choices=['protocol_1', 'protocol_2', 'protocol_3', 'protocol_4'],
         help='''Training protocol:
@@ -37,50 +37,59 @@ def parse_args():
                 protocol_3: Cross-dataset evaluation
                 protocol_4: Domain generalization'''
     )
-    basic_group.add_argument(
+    parser.add_argument(
         '--checkpoint', type=str,
         help='Path to checkpoint file (.pth) or folder containing checkpoints for testing'
     )
 
     # Training configs
-    train_group = parser.add_argument_group('Training configurations') 
-    train_group.add_argument(
+    parser.add_argument(
         '--epochs', type=int,
         help='Number of training epochs (default: from config)'
     )
-    train_group.add_argument(
+    parser.add_argument(
+        '--auto_hp', action='store_true',
+        help='Automatically optimize hyperparameters using Optuna'
+    )
+    parser.add_argument(
+        '--hp_trials', type=int, default=20,
+        help='Number of hyperparameter optimization trials'
+    )
+    parser.add_argument(
+        '--hp_timeout', type=int, default=3600,
+        help='Timeout for hyperparameter optimization in seconds'
+    )
+    parser.add_argument(
         '--lr', type=float,
         help='Learning rate (default: from config)'
     )
-    train_group.add_argument(
+    parser.add_argument(
         '--batch_size', type=int,
         help='Batch size (default: auto)'
     )
-    train_group.add_argument(
+    parser.add_argument(
         '--optimizer', type=str,
         choices=['adam', 'sgd'],
         help='Optimizer type (default: from config)'
     )
-    train_group.add_argument(
+    parser.add_argument(
         '--scheduler', type=str,
         choices=['step', 'cosine'],
         help='Learning rate scheduler (default: from config)'
     )
 
     # Device configs
-    device_group = parser.add_argument_group('Device configurations')
-    device_group.add_argument(
+    parser.add_argument(
         '--device', type=str, default='cuda',
         help='Device to run on (cuda/cpu)'
     )
-    device_group.add_argument(
+    parser.add_argument(
         '--num_workers', type=int,
         help='Number of data loading workers (default: auto)'
     )
 
     # Debug configs
-    debug_group = parser.add_argument_group('Debug configurations')
-    debug_group.add_argument(
+    parser.add_argument(
         '--debug_fraction', type=float, default=1.0,
         help='Fraction of data to use (0-1)'
     )
@@ -120,13 +129,13 @@ def set_seed(seed):
 
 def get_optimizer(model, config):
     if config.optimizer == 'adam':
-        return torch.optim.Adam(
+        return Adam(
             model.parameters(),
             lr=config.learning_rate,
             weight_decay=config.weight_decay
         )
     else:
-        return torch.optim.SGD(
+        return SGD(
             model.parameters(), 
             lr=config.learning_rate,
             momentum=config.momentum,
@@ -135,13 +144,13 @@ def get_optimizer(model, config):
 
 def get_scheduler(optimizer, config):
     if config.scheduler == 'step':
-        return torch.optim.lr_scheduler.StepLR(
+        return lr_scheduler.StepLR(
             optimizer,
             step_size=config.step_size,
             gamma=config.gamma
         )
     else:
-        return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        return lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer,
             T_0=config.warmup_epochs,
             eta_min=config.min_lr
@@ -150,7 +159,7 @@ def get_scheduler(optimizer, config):
 def main():
     args = parse_args()
     
-    # Initialize config
+    print("\nInitializing...")
     config = Config()
     config.protocol = args.protocol
     
@@ -178,6 +187,7 @@ def main():
     set_seed(config.seed)
     
     # Create dataloaders
+    print("\nLoading datasets...")
     dataloaders = get_dataloaders(config)
     
     # Find optimal batch size and workers if not specified
@@ -198,14 +208,39 @@ def main():
         dataloaders = get_dataloaders(config)
     
     if args.mode == 'train':
-        # Initialize model
+        print("\nPreparing for training...")
+        if args.auto_hp:
+            # Initialize hyperparameter optimizer
+            hp_optimizer = HyperparameterOptimizer(
+                model_class=SSAN,
+                train_loader=dataloaders['train'],
+                val_loader=dataloaders['val'],
+                config=config,
+                study_name=f"ssan_{config.protocol}",
+                n_trials=args.hp_trials,
+                timeout=args.hp_timeout,
+                output_dir=config.output_dir / "hp_optimization"
+            )
+            
+            # Run optimization
+            best_params = hp_optimizer.optimize()
+            print("\nBest hyperparameters found:")
+            for param, value in best_params.items():
+                print(f"{param}: {value}")
+                setattr(config, param, value)
+            
+            # Recreate dataloaders with optimal batch size
+            if 'batch_size' in best_params:
+                dataloaders = get_dataloaders(config)
+
+        # Initialize model with optimal/default params
         model = SSAN(
             num_domains=config.num_domains,
-            ada_blocks=config.ada_blocks, 
+            ada_blocks=config.ada_blocks,
             dropout=config.dropout
         ).to(args.device)
-        
-        # Initialize training components
+
+        # Initialize training components with optimal/default params
         optimizer = get_optimizer(model, config)
         scheduler = get_scheduler(optimizer, config)
         criterion = {
