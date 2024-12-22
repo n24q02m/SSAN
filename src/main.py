@@ -60,6 +60,10 @@ def parse_args():
         help='Timeout for hyperparameter optimization in seconds'
     )
     parser.add_argument(
+        '--fraction', type=float, default=1.0,
+        help='Fraction of data to use for all splits (0-1)'
+    )
+    parser.add_argument(
         '--lr', type=float,
         help='Learning rate (default: from config)'
     )
@@ -84,14 +88,13 @@ def parse_args():
         help='Device to run on (cuda/cpu)'
     )
     parser.add_argument(
+        '--no_workers',
+        action='store_true',
+        help='Disable data loading workers (useful for GPU)'
+    )
+    parser.add_argument(
         '--num_workers', type=int,
         help='Number of data loading workers (default: auto)'
-    )
-
-    # Debug configs
-    parser.add_argument(
-        '--debug_fraction', type=float, default=1.0,
-        help='Fraction of data to use (0-1)'
     )
 
     args = parser.parse_args()
@@ -114,8 +117,8 @@ def print_config(args, config):
         print(f"- Scheduler: {config.scheduler}")
         print(f"- Workers: {config.num_workers}")
     
-    if args.debug_fraction < 1.0:
-        print(f"\nDebug mode: Using {args.debug_fraction*100:.1f}% of data")
+    if args.fraction < 1.0:
+        print(f"\nUsing {args.fraction*100:.1f}% of data")
     print("===================\n")
 
 def set_seed(seed):
@@ -164,9 +167,12 @@ def main():
     config.protocol = args.protocol
     
     # Override config with args
-    if args.debug_fraction:
-        config.debug_fraction = args.debug_fraction
-        print(f"Using {config.debug_fraction*100:.1f}% of data for debugging")
+    if args.no_workers:
+        config.num_workers = 0
+        print("Data loading workers disabled")
+    if args.fraction:
+        config.fraction = args.fraction
+        print(f"Using {config.fraction*100:.1f}% of data")
     if args.epochs:
         config.num_epochs = args.epochs
     if args.lr:
@@ -189,28 +195,42 @@ def main():
     # Create dataloaders
     print("\nLoading datasets...")
     dataloaders = get_dataloaders(config)
-    
-    # Find optimal batch size and workers if not specified
+
+    print("\nFinding optimal parameters...")
+    need_recreate = False
     if not args.batch_size or not args.num_workers:
+        print("Initializing temporary model...")
         model = SSAN(
             num_domains=config.num_domains,
             ada_blocks=config.ada_blocks,
             dropout=config.dropout
         ).to(args.device)
         
+        print("Getting sample batch...")
         sample_batch = next(iter(dataloaders['train']))
+        
         if not args.batch_size:
+            print("Finding optimal batch size...")
             config.batch_size = find_optimal_batch_size(model, sample_batch)
-        if not args.num_workers:
-            config.num_workers = find_optimal_workers(dataloaders['train'])
+            print(f"Optimal batch size: {config.batch_size}")
+            need_recreate = True
             
-        # Recreate dataloaders with optimal values
-        dataloaders = get_dataloaders(config)
-    
+        if not args.num_workers and not args.no_workers:
+            print("Finding optimal number of workers...")
+            config.num_workers = find_optimal_workers(dataloaders['train']) 
+            print(f"Optimal workers: {config.num_workers}")
+            need_recreate = True
+            
+        if need_recreate:
+            print("\nRecreating dataloaders with optimal values...")
+            dataloaders = get_dataloaders(config)
+
     if args.mode == 'train':
         print("\nPreparing for training...")
         if args.auto_hp:
-            # Initialize hyperparameter optimizer
+            print("\nStarting hyperparameter optimization...")
+            print(f"Will run {args.hp_trials} trials with {args.hp_timeout}s timeout")
+            
             hp_optimizer = HyperparameterOptimizer(
                 model_class=SSAN,
                 train_loader=dataloaders['train'],
@@ -222,25 +242,24 @@ def main():
                 output_dir=config.output_dir / "hp_optimization"
             )
             
-            # Run optimization
             best_params = hp_optimizer.optimize()
             print("\nBest hyperparameters found:")
             for param, value in best_params.items():
-                print(f"{param}: {value}")
+                print(f"  {param}: {value}")
                 setattr(config, param, value)
             
-            # Recreate dataloaders with optimal batch size
             if 'batch_size' in best_params:
+                print("\nRecreating dataloaders with optimal batch size...")
                 dataloaders = get_dataloaders(config)
 
-        # Initialize model with optimal/default params
+        print("\nInitializing model and training components...")
         model = SSAN(
             num_domains=config.num_domains,
             ada_blocks=config.ada_blocks,
             dropout=config.dropout
         ).to(args.device)
+        print("Model initialized")
 
-        # Initialize training components with optimal/default params
         optimizer = get_optimizer(model, config)
         scheduler = get_scheduler(optimizer, config)
         criterion = {
@@ -248,6 +267,7 @@ def main():
             'domain': DomainAdversarialLoss(),
             'contrast': ContrastiveLoss()
         }
+        print("Training components initialized")
         
         # Initialize trainer
         trainer = Trainer(

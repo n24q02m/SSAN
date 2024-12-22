@@ -11,6 +11,7 @@ import multiprocessing as mp
 from functools import partial
 from torch.utils.data import DataLoader, Dataset
 from prefetch_generator import BackgroundGenerator
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
@@ -163,6 +164,14 @@ def create_protocol_splits(dataset_paths, config):
             protocols
         )
 
+def format_filename(filename):
+    """Convert filename to 6 digits format"""
+    try:
+        # Convert to integer and back to string with leading zeros
+        return f"{int(filename):06d}"
+    except ValueError:
+        return filename
+
 class FASDataset(Dataset):
     def __init__(self, protocol_csv, config, transform=None):
         self.config = config
@@ -177,14 +186,14 @@ class FASDataset(Dataset):
             "Zalo_AIC": "Zalo_AIC_dataset" if not config.is_kaggle else "zalo-aic-face-anti-spoofing-dataset"
         }
 
-        # Read and sample data based on debug_fraction
+        # Read and sample data based on fraction
         df = pd.read_csv(protocol_csv)
-        if config.debug_fraction < 1.0:
+        if config.fraction < 1.0:
             # Ensure balanced sampling between classes
             sampled_dfs = []
             for label in df['label'].unique():
                 label_df = df[df['label'] == label]
-                n_samples = int(len(label_df) * config.debug_fraction)
+                n_samples = int(len(label_df) * config.fraction)
                 sampled_df = label_df.sample(n=n_samples, random_state=config.seed)
                 sampled_dfs.append(sampled_df)
             self.data = pd.concat(sampled_dfs).reset_index(drop=True)
@@ -193,6 +202,8 @@ class FASDataset(Dataset):
         
         # Cache image paths and bboxes
         self.cached_paths = []
+        self.data['filename'] = self.data['filename'].apply(format_filename)
+
         for idx in range(len(self.data)):
             try:
                 row = self.data.iloc[idx]
@@ -202,8 +213,11 @@ class FASDataset(Dataset):
                 if not img_dir.exists():
                     raise FileNotFoundError(f"Directory not found: {img_dir}")
 
+                # Đã chuẩn hóa filename thành 6 chữ số
+                filename = row['filename']  # Now already in 6 digits format
+                
                 # Try both jpg and png extensions
-                img_patterns = [f"{row['filename']}.jpg", f"{row['filename']}.png"] 
+                img_patterns = [f"{filename}.jpg", f"{filename}.png"]
                 img_path = None
                 for pattern in img_patterns:
                     potential_path = img_dir / pattern
@@ -212,9 +226,9 @@ class FASDataset(Dataset):
                         break
 
                 if img_path is None:
-                    raise FileNotFoundError(f"No image file found for {row['filename']} in {img_dir}")
+                    raise FileNotFoundError(f"No image file found for {filename} in {img_dir}")
 
-                bbox_path = img_path.parent / f"{img_path.stem}_BB.txt"
+                bbox_path = img_path.parent / f"{filename}_BB.txt"
                 if not bbox_path.exists():
                     raise FileNotFoundError(f"Bbox file not found: {bbox_path}")
 
@@ -238,7 +252,11 @@ class FASDataset(Dataset):
             raise RuntimeError("No valid images found in dataset")
             
         print(f"Successfully loaded {len(self.cached_paths)} valid images")
-            
+
+    def __len__(self):
+        """Return the size of the dataset"""
+        return len(self.cached_paths)
+
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
         cached = self.cached_paths[idx]
@@ -289,52 +307,77 @@ def get_dataloaders(config):
     print("Creating dataloaders...")
     protocol_dir = config.protocol_dir / config.protocol
     
-    print("Loading training data...")
-    train_dataset = FASDataset(
-        protocol_dir / "train.csv",
-        config,
-        transform=get_transforms("train", config)
-    )
-    print(f"Training dataset size: {len(train_dataset)}")
-    
-    print("Loading validation data...")
-    val_dataset = FASDataset(
-        protocol_dir / "val.csv", 
-        config,
-        transform=get_transforms("val", config)
-    )
-    print(f"Validation dataset size: {len(val_dataset)}")
-    
-    print("Loading test data...")
-    test_dataset = FASDataset(
-        protocol_dir / "test.csv",
-        config, 
-        transform=get_transforms("test", config)
-    )
-    print(f"Test dataset size: {len(test_dataset)}")
+    # Get unique dataset names from protocol CSVs
+    dataset_names = []
+    print("\nLoading protocol files...")
+    for split in tqdm(['train', 'val', 'test'], desc="Reading CSV files"):
+        csv_path = protocol_dir / f"{split}.csv"
+        if csv_path.exists():
+            df = pd.read_csv(csv_path)
+            dataset_names.extend(df['dataset'].unique())
+    config.dataset_names = sorted(list(set(dataset_names)))
+    print(f"Found datasets: {config.dataset_names}")
 
-    print("Creating DataLoaders...")
+    # If using GPU, workers may not be needed
+    if config.device == 'cuda':
+        config.num_workers = 0  # Disable workers when using GPU
+        pin_memory = True
+    else:
+        pin_memory = False
+
+    print("\nLoading datasets:")
+    with tqdm(total=3, desc="Creating datasets") as pbar:
+        print("Loading training data...")
+        train_dataset = FASDataset(
+            protocol_dir / "train.csv",
+            config,
+            transform=get_transforms("train", config)
+        )
+        pbar.update(1)
+        
+        print("Loading validation data...")
+        val_dataset = FASDataset(
+            protocol_dir / "val.csv", 
+            config,
+            transform=get_transforms("val", config)
+        )
+        pbar.update(1)
+        
+        print("Loading test data...")
+        test_dataset = FASDataset(
+            protocol_dir / "test.csv",
+            config, 
+            transform=get_transforms("test", config)
+        )
+        pbar.update(1)
+
+    print("\nDataset sizes:")
+    print(f"Training: {len(train_dataset)}")
+    print(f"Validation: {len(val_dataset)}")
+    print(f"Test: {len(test_dataset)}")
+
+    print("\nCreating DataLoaders...")
     loaders = {
         "train": DataLoaderX(
             train_dataset,
             batch_size=config.batch_size,
             shuffle=True, 
             num_workers=config.num_workers,
-            pin_memory=True
+            pin_memory=pin_memory
         ),
         "val": DataLoaderX(
             val_dataset,
             batch_size=config.batch_size,
             shuffle=False,
             num_workers=config.num_workers,
-            pin_memory=True
+            pin_memory=pin_memory
         ),
         "test": DataLoaderX(
             test_dataset,
             batch_size=config.batch_size,
             shuffle=False,
             num_workers=config.num_workers,
-            pin_memory=True
+            pin_memory=pin_memory
         )
     }
     print("DataLoaders created successfully")

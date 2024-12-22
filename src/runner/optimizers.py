@@ -85,13 +85,21 @@ def find_optimal_batch_size(
     left, right = min_batch, max_batch
     optimal_batch = min_batch
     
-    while left <= right:
-        mid = (left + right) // 2
-        if test_batch_size(mid):
-            optimal_batch = mid
-            left = mid + 1
-        else:
-            right = mid - 1
+    print("\nSearching for optimal batch size...")
+    # Binary search with progress bar
+    tried_sizes = []
+    with tqdm(total=int(np.log2(max_batch-min_batch+1))+1, desc="Testing batch sizes") as pbar:
+        while left <= right:
+            mid = (left + right) // 2
+            if test_batch_size(mid):
+                optimal_batch = mid
+                left = mid + 1
+                tried_sizes.append(f"{mid} ✓")
+            else:
+                right = mid - 1
+                tried_sizes.append(f"{mid} ✗")
+            pbar.update(1)
+            pbar.set_postfix({"Tested": ", ".join(tried_sizes[-3:])})
             
     return optimal_batch
 
@@ -108,15 +116,18 @@ def find_optimal_workers(
     Returns:
         Optimal number of workers
     """
+    if dataloader.num_workers == 0:
+        return 0
+        
     if max_workers is None:
         max_workers = os.cpu_count()
 
-    # Test different numbers of workers
+    print("\nFinding optimal number of workers...")
     times = []
     workers = range(0, max_workers + 1, 2)
-    for num_workers in workers:
+    
+    for num_workers in tqdm(workers, desc="Testing worker counts"):
         dataloader.num_workers = num_workers
-        
         start = Event(enable_timing=True)
         end = Event(enable_timing=True)
         
@@ -124,12 +135,9 @@ def find_optimal_workers(
         for _ in dataloader:
             pass
         end.record()
-        
-        # Waits for everything to finish running
         synchronize()
         times.append(start.elapsed_time(end))
         
-    # Find fastest number of workers
     optimal_workers = workers[np.argmin(times)]
     return optimal_workers
 

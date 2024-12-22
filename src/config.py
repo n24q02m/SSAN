@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import torch
 
 class Config:
     """Configuration class to handle different environments"""
@@ -75,4 +76,7 @@ class Config:
         self.early_stopping = True
         
         # Debug config
-        self.debug_fraction = 1.0
+        self.fraction = 1.0
+        
+        # Device config
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'

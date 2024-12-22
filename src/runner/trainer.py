@@ -416,7 +416,7 @@ class Trainer:
 
         # Return loss values for metrics
         return {
-            'total': losses['total'].item(),
+            'loss': losses['total'].item(),
             'cls_loss': losses['cls_loss'],
             'domain_loss': losses['domain_loss'],
             'contrast_loss': losses['contrast_loss'],
