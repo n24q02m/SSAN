@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import pandas as pd
 import psutil
 import torch
 import optuna
@@ -153,7 +154,8 @@ class HyperparameterOptimizer:
         study_name: str = "ssan_optimization",
         n_trials: int = 100,
         timeout: int = 3600,  # 1 hour
-        output_dir: Path = None
+        output_dir: Path = None,
+        optimization_fraction: float = 0.1
     ):
         self.model_class = model_class
         self.train_loader = train_loader 
@@ -164,6 +166,7 @@ class HyperparameterOptimizer:
         self.timeout = timeout
         self.output_dir = output_dir or Path("optuna_studies")
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.optimization_fraction = optimization_fraction
         
         # Create study
         self.study = optuna.create_study(
@@ -242,11 +245,39 @@ class HyperparameterOptimizer:
             'contrast': ContrastiveLoss()
         }
 
+        # Create subset of data for optimization
+        train_subset_size = int(len(self.train_loader.dataset) * self.optimization_fraction)
+        val_subset_size = int(len(self.val_loader.dataset) * self.optimization_fraction)
+        
+        train_subset = torch.utils.data.Subset(
+            self.train_loader.dataset,
+            indices=torch.randperm(len(self.train_loader.dataset))[:train_subset_size]
+        )
+        val_subset = torch.utils.data.Subset(
+            self.val_loader.dataset,
+            indices=torch.randperm(len(self.val_loader.dataset))[:val_subset_size]
+        )
+
+        # Create new dataloaders with subsets
+        train_loader_subset = DataLoader(
+            train_subset,
+            batch_size=self.train_loader.batch_size,
+            shuffle=True,
+            num_workers=self.train_loader.num_workers
+        )
+        val_loader_subset = DataLoader(
+            val_subset,
+            batch_size=self.val_loader.batch_size,
+            shuffle=False,
+            num_workers=self.val_loader.num_workers
+        )
+
+        # Initialize trainer with subset data
         trainer = Trainer(
             model=model,
-            train_loader=self.train_loader,
-            val_loader=self.val_loader,
-            test_loader=self.val_loader,
+            train_loader=train_loader_subset,  # Use subset
+            val_loader=val_loader_subset,      # Use subset 
+            test_loader=val_loader_subset,
             optimizer=optimizer,
             scheduler=scheduler,
             criterion=criterion,
@@ -256,26 +287,52 @@ class HyperparameterOptimizer:
         
        # Train with progress bar
         n_epochs = 5
+        min_accuracy = 0.6  # Minimum accuracy threshold
+        consecutive_poor = 0
+        max_poor = 2  # Maximum allowed consecutive poor performance
         best_val_acc = 0
         
-        with tqdm(range(n_epochs), desc="Optimization epochs") as pbar:
-            for epoch in pbar:
-                train_metrics = trainer.train_epoch(epoch)
-                val_metrics = trainer.evaluate(self.val_loader)
-                best_val_acc = max(best_val_acc, val_metrics["accuracy"])
+        # Tạo thư mục riêng cho optimization metrics
+        opt_metrics_dir = self.output_dir / "metrics"
+        opt_metrics_dir.mkdir(exist_ok=True)
+        
+        # Lưu metrics vào file riêng
+        metrics_file = opt_metrics_dir / f"trial_{trial.number}_metrics.csv"
+        
+        for epoch in range(n_epochs):
+            train_metrics = trainer.train_epoch(epoch)
+            val_metrics = trainer.evaluate(self.val_loader)
+            
+            # Lưu metrics
+            pd.DataFrame([{
+                'epoch': epoch,
+                'trial': trial.number,
+                **train_metrics,
+                **{'val_'+k: v for k,v in val_metrics.items()}
+            }]).to_csv(metrics_file, mode='a', header=not metrics_file.exists(), index=False)
+            
+            # Report accuracy to Optuna for pruning
+            accuracy = val_metrics["accuracy"]
+            trial.report(accuracy, epoch)
+            
+            # Update best accuracy
+            best_val_acc = max(best_val_acc, accuracy)
+            
+            # Check for pruning based on accuracy threshold
+            if accuracy < min_accuracy:
+                consecutive_poor += 1
+            else:
+                consecutive_poor = 0
                 
-                # Update progress bar
-                pbar.set_postfix({
-                    'train_loss': f"{train_metrics['loss']:.4f}",
-                    'val_acc': f"{val_metrics['accuracy']:.4f}",
-                    'best_acc': f"{best_val_acc:.4f}"
-                })
+            if consecutive_poor >= max_poor:
+                self.logger.info(f"Trial pruned due to poor performance: accuracy={accuracy:.4f}")
+                raise optuna.TrialPruned()
                 
-                trial.report(val_metrics["accuracy"], epoch)
-                if trial.should_prune():
-                    self.logger.info("Trial pruned!")
-                    raise optuna.TrialPruned()
-
+            # Let Optuna handle pruning
+            if trial.should_prune():
+                self.logger.info("Trial pruned by Optuna")
+                raise optuna.TrialPruned()
+                
         return best_val_acc
         
     def optimize(self) -> Dict[str, Any]:
@@ -288,7 +345,9 @@ class HyperparameterOptimizer:
             self.objective,
             n_trials=self.n_trials,
             timeout=self.timeout,
-            show_progress_bar=True
+            show_progress_bar=True,
+            n_jobs=1,  # Run sequentially
+            catch=(Exception,)
         )
         
         # Print and save results

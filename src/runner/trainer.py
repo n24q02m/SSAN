@@ -56,16 +56,16 @@ class Trainer:
         self.callbacks = callbacks or {}
 
         # Training state
-        self.lambda_val = 0.0  # Lambda for GRL
+        self.lambda_val = 0.0
         self.current_epoch = 0
         self.global_step = 0
-        self.scaler = GradScaler()  # For mixed precision training
-        
+        self.scaler = GradScaler()
+
         # Metrics tracking
         self.best_metrics = {
             'epoch': 0,
             'auc': 0,
-            'accuracy': 0, 
+            'accuracy': 0,
             'loss': float('inf'),
             'tpr@fpr=0.1': 0,
             'hter': 1.0,
@@ -78,19 +78,16 @@ class Trainer:
         self.best_val_loss = float('inf')
         self.should_stop = False
 
-        # Setup paths and logging
-        self.setup_directories()
-        self.setup_logging()
-        
-        # Change output directory setup
+        # Setup output directory first
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_dir = config.output_dir
         if not hasattr(config, 'run_dir'):
-            # Create new run directory only once
             config.run_dir = self.output_dir / f"train_{timestamp}"
-            
         self.run_dir = config.run_dir
+
+        # Now setup directories and logging
         self.setup_directories()
+        self.setup_logging()
 
     def _init_metrics(self) -> Dict[str, float]:
         """Initialize metrics dictionary"""
@@ -241,16 +238,21 @@ class Trainer:
                 })
 
     def _log_final_results(self, metrics: Dict[str, float]) -> None:
-        """Log final evaluation results
-        
-        Args:
-            metrics: Dictionary of final metrics
-        """
-        # Log final metrics
+        """Log final evaluation results"""
+        # Log to file
+        with open(self.log_dir / 'final_results.txt', 'w') as f:
+            f.write("Final Test Results:\n")
+            for k, v in metrics.items():
+                f.write(f"{k}: {v:.4f}\n")
+            
+            f.write("\nBest Validation Metrics:\n")  
+            for k, v in self.best_metrics.items():
+                f.write(f"{k}: {v:.4f}\n")
+
+        # Log to console
         metric_str = ' '.join([f'{k}={v:.4f}' for k, v in metrics.items()])
         self.logger.info(f'Final test results: {metric_str}')
         
-        # Log best metrics
         best_str = ' '.join([f'{k}={v:.4f}' for k, v in self.best_metrics.items()])
         self.logger.info(f'Best validation metrics: {best_str}')
 
@@ -268,6 +270,13 @@ class Trainer:
             self.early_stopping_counter = 0
         else:
             self.early_stopping_counter += 1
+            
+        # Add maximum counter to force stop
+        max_patience = self.patience * 2
+        if self.early_stopping_counter >= max_patience:
+            self.should_stop = True
+            self.logger.info(f'Forced early stopping after {max_patience} epochs without improvement')
+            return True
             
         if self.early_stopping_counter >= self.patience:
             self.should_stop = True
@@ -296,22 +305,32 @@ class Trainer:
     def _plot_training_curves(self) -> None:
         """Plot and save training curves"""
         try:
-            # Read metrics from CSV
+            # Skip optimization trial metrics
             train_df = pd.read_csv(self.csv_dir / "train_metrics.csv")
             val_df = pd.read_csv(self.csv_dir / "val_metrics.csv")
             
-            # Plot metrics
+            # Add epoch column if not exists
+            if 'epoch' not in train_df:
+                train_df['epoch'] = range(len(train_df))
+            if 'epoch' not in val_df:
+                val_df['epoch'] = range(len(val_df))
+                
+            # Plot training curves
             metrics_to_plot = [
                 ('loss', 'Loss'),
                 ('accuracy', 'Accuracy'), 
-                ('auc', 'AUC-ROC')
+                ('auc', 'AUC-ROC'),
+                ('cls_loss', 'Classification Loss'),
+                ('domain_loss', 'Domain Loss'),
+                ('contrast_loss', 'Contrastive Loss')
             ]
-            
+
             for metric, title in metrics_to_plot:
-                if metric in train_df.columns and metric in val_df.columns:
+                if metric in train_df.columns and (metric in val_df.columns or metric.startswith('cls_')):
                     plt.figure(figsize=(10, 6))
-                    plt.plot(train_df[metric], label='Train')
-                    plt.plot(val_df[metric], label='Validation')
+                    plt.plot(train_df['epoch'], train_df[metric], label='Train')
+                    if metric in val_df.columns:  # Only plot validation for main metrics
+                        plt.plot(val_df['epoch'], val_df[metric], label='Validation')
                     plt.title(f'{title} vs Epoch')
                     plt.xlabel('Epoch')
                     plt.ylabel(title)
@@ -319,6 +338,7 @@ class Trainer:
                     plt.grid(True)
                     plt.savefig(self.plot_dir / f'{metric}_curve.png')
                     plt.close()
+
         except Exception as e:
             self.logger.warning(f"Failed to plot training curves: {str(e)}")
 

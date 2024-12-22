@@ -52,16 +52,16 @@ def parse_args():
         help='Automatically optimize hyperparameters using Optuna'
     )
     parser.add_argument(
-        '--hp_trials', type=int, default=20,
+        '--hp_trials', type=int, default=10,
         help='Number of hyperparameter optimization trials'
     )
     parser.add_argument(
-        '--hp_timeout', type=int, default=3600,
+        '--hp_timeout', type=int, default=1800,
         help='Timeout for hyperparameter optimization in seconds'
     )
     parser.add_argument(
         '--fraction', type=float, default=1.0,
-        help='Fraction of data to use for all splits (0-1)'
+        help='Fraction of data to use for all splits (0.01-1.0)'
     )
     parser.add_argument(
         '--lr', type=float,
@@ -162,6 +162,10 @@ def get_scheduler(optimizer, config):
 def main():
     args = parse_args()
     
+    # Validate fraction
+    if args.fraction < 0.01 or args.fraction > 1.0:
+        raise ValueError("Fraction must be between 0.01 (1%) and 1.0 (100%)")
+    
     print("\nInitializing...")
     config = Config()
     config.protocol = args.protocol
@@ -171,7 +175,7 @@ def main():
         config.num_workers = 0
         print("Data loading workers disabled")
     if args.fraction:
-        config.fraction = args.fraction
+        config.fraction = max(0.01, args.fraction)
         print(f"Using {config.fraction*100:.1f}% of data")
     if args.epochs:
         config.num_epochs = args.epochs
@@ -227,6 +231,7 @@ def main():
 
     if args.mode == 'train':
         print("\nPreparing for training...")
+        
         if args.auto_hp:
             print("\nStarting hyperparameter optimization...")
             print(f"Will run {args.hp_trials} trials with {args.hp_timeout}s timeout")
@@ -239,7 +244,8 @@ def main():
                 study_name=f"ssan_{config.protocol}",
                 n_trials=args.hp_trials,
                 timeout=args.hp_timeout,
-                output_dir=config.output_dir / "hp_optimization"
+                output_dir=config.output_dir / "hp_optimization",
+                optimization_fraction=max(0.01, config.fraction / 10)
             )
             
             best_params = hp_optimizer.optimize()
@@ -248,10 +254,12 @@ def main():
                 print(f"  {param}: {value}")
                 setattr(config, param, value)
             
+            # Recreate everything with optimized parameters
             if 'batch_size' in best_params:
                 print("\nRecreating dataloaders with optimal batch size...")
                 dataloaders = get_dataloaders(config)
 
+        # Initialize model AFTER hyperparameter optimization
         print("\nInitializing model and training components...")
         model = SSAN(
             num_domains=config.num_domains,
@@ -267,12 +275,11 @@ def main():
             'domain': DomainAdversarialLoss(),
             'contrast': ContrastiveLoss()
         }
-        print("Training components initialized")
-        
+
         # Initialize trainer
         trainer = Trainer(
             model=model,
-            train_loader=dataloaders['train'],
+            train_loader=dataloaders['train'], 
             val_loader=dataloaders['val'],
             test_loader=dataloaders['test'],
             optimizer=optimizer,
@@ -281,8 +288,8 @@ def main():
             config=config,
             device=args.device
         )
-        
-        # Train
+
+        # Train with final parameters
         best_metrics = trainer.train()
         print("Training completed. Best metrics:", best_metrics)
         
