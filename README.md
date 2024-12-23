@@ -1,11 +1,11 @@
-# Shuffled Style Assembly Network (SSAN) for Face Anti-Spoofing
+﻿# Shuffled Style Assembly Network (SSAN) for Face Anti-Spoofing
 
 This repository contains the PyTorch implementation of the Shuffled Style Assembly Network (SSAN) for Face Anti-Spoofing, as described in the paper:
 
 **Domain Generalization via Shuffled Style Assembly for Face Anti-Spoofing**
 ([Paper](https://doi.org/10.48550/arXiv.2203.05340))
 
-## Overview
+## Overview 
 
 This project provides a clean and well-structured implementation of the SSAN model from scratch, based on the original paper and the official implementation (included as a submodule). It includes data loading, model definition, training, and testing pipelines.
 
