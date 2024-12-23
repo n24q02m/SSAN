@@ -163,3 +163,5 @@ cython_debug/
 
 # General
 *_dataset/
+output/
+!output/dir_structure.txt
