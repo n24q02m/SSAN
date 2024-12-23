@@ -163,7 +163,4 @@ cython_debug/
 
 # General
 *_dataset/
-output/hp_optimization/
-output/test_*/
-output/train_*/
-!output/dir_structure.txt
+*.pth
