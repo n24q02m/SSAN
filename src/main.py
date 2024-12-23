@@ -62,18 +62,6 @@ def parse_args():
         help="Automatically optimize hyperparameters using Optuna",
     )
     parser.add_argument(
-        "--hp_trials",
-        type=int,
-        default=10,
-        help="Number of hyperparameter optimization trials",
-    )
-    parser.add_argument(
-        "--hp_timeout",
-        type=int,
-        default=1800,
-        help="Timeout for hyperparameter optimization in seconds",
-    )
-    parser.add_argument(
         "--fraction",
         type=float,
         default=1.0,
@@ -97,11 +85,6 @@ def parse_args():
     # Device configs
     parser.add_argument(
         "--device", type=str, default="cuda", help="Device to run on (cuda/cpu)"
-    )
-    parser.add_argument(
-        "--no_workers",
-        action="store_true",
-        help="Disable data loading workers (useful for GPU)",
     )
     parser.add_argument(
         "--num_workers", type=int, help="Number of data loading workers (default: auto)"
@@ -182,9 +165,6 @@ def main():
     config.protocol = args.protocol
 
     # Override config with args
-    if args.no_workers:
-        config.num_workers = 0
-        print("Data loading workers disabled")
     if args.fraction:
         config.fraction = max(0.01, args.fraction)
         print(f"Using {config.fraction*100:.1f}% of data")
@@ -230,7 +210,7 @@ def main():
             print(f"Optimal batch size: {config.batch_size}")
             need_recreate = True
 
-        if not args.num_workers and not args.no_workers:
+        if not args.num_workers:
             print("Finding optimal number of workers...")
             config.num_workers = find_optimal_workers(dataloaders["train"])
             print(f"Optimal workers: {config.num_workers}")
@@ -252,10 +232,7 @@ def main():
                 val_loader=dataloaders["val"],
                 config=config,
                 study_name=f"ssan_{config.protocol}",
-                n_trials=args.hp_trials,
-                timeout=args.hp_timeout,
                 output_dir=config.output_dir / "hp_optimization",
-                optimization_fraction=max(0.01, config.fraction / 10),
             )
 
             best_params = hp_optimizer.optimize()

@@ -160,21 +160,18 @@ class HyperparameterOptimizer:
         val_loader: DataLoader,
         config: Any,
         study_name: str = "ssan_optimization",
-        n_trials: int = 100,
-        timeout: int = 3600,  # 1 hour
         output_dir: Path = None,
-        optimization_fraction: float = 0.1,
     ):
         self.model_class = model_class
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.config = config
         self.study_name = study_name
-        self.n_trials = n_trials
-        self.timeout = timeout
+        self.n_trials = 10  # Cố định số lượng trials
+        self.timeout = 1800  # Cố định timeout (1 giờ)
         self.output_dir = output_dir or Path("optuna_studies")
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.optimization_fraction = optimization_fraction
+        self.optimization_fraction = 0.01  # Cố định optimization_fraction
 
         # Create study
         self.study = optuna.create_study(
