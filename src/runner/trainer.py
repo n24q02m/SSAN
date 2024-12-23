@@ -1,17 +1,19 @@
 import torch
-from torch.nn import Module, functional as F
+from torch.nn import Module
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer, lr_scheduler
 from tqdm import tqdm
 import numpy as np
-from pathlib import Path
 import logging
 from torch.amp import autocast, GradScaler
 from typing import Dict, Any, Optional
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
 from datetime import datetime
 from sklearn.metrics import roc_auc_score, roc_curve, accuracy_score
+
+matplotlib.use('Agg')
 
 class Trainer:
     """SSAN Trainer with mixed precision training and comprehensive metrics tracking"""
