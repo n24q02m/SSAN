@@ -1,6 +1,6 @@
 # Enviroment
 
-- CUDA 12.4
+- CUDA 12.6
 - Python 3.10
 
 ```shell
@@ -11,7 +11,7 @@ conda activate ssan
 - PyTorch
 
 ```shell
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
 ```
 
 - Other dependencies
