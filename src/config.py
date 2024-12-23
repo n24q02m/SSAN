@@ -18,7 +18,7 @@ class Config:
                 "NUAAA": self.data_dir / "nuaaa-face-anti-spoofing-dataset",
                 "Zalo_AIC": self.data_dir / "zalo-aic-face-anti-spoofing-dataset"
             }
-            self.protocol_dir = self.root_dir / "protocols"
+            self.protocol_dir = self.root_dir / "data" / "protocols"
         else:
             self.root_dir = Path('.')
             self.data_dir = self.root_dir / "data"

@@ -169,10 +169,7 @@ def main():
     print("\nInitializing...")
     config = Config()
     config.protocol = args.protocol
-    
-    print("\nCreating protocol splits...")
-    create_protocol_splits(config.dataset_paths, config)
-    
+
     # Override config with args
     if args.no_workers:
         config.num_workers = 0
