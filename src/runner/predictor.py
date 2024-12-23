@@ -235,12 +235,7 @@ class Predictor:
 
     @classmethod
     def from_checkpoint(cls, checkpoint_path, model, test_loader, device, output_dir=None):
-        """Load model from checkpoint path
-        
-        Args:
-            checkpoint_path: Path to checkpoint file or folder containing checkpoints.
-                        If folder, will try to load best.pth first, then latest.pth
-        """
+        """Load model from checkpoint path"""
         if Path(checkpoint_path).is_dir():
             best_ckpt = Path(checkpoint_path) / 'best.pth'
             latest_ckpt = Path(checkpoint_path) / 'latest.pth'
@@ -251,8 +246,8 @@ class Predictor:
                 checkpoint_path = latest_ckpt
             else:
                 raise FileNotFoundError(f"No checkpoint found in {checkpoint_path}")
-        # Load checkpoint
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+                
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         
         # Load model state
         model.load_state_dict(checkpoint['model_state_dict'])

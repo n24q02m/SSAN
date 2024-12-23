@@ -262,9 +262,7 @@ class Trainer:
         if mode == 'val':
             # Update best metrics based on multiple criteria
             should_update = (
-                metrics['accuracy'] > self.best_metrics['accuracy'] or
-                (metrics['accuracy'] == self.best_metrics['accuracy'] and 
-                metrics['auc'] > self.best_metrics['auc'])
+                metrics['accuracy'] > self.best_metrics['accuracy'] or (metrics['accuracy'] == self.best_metrics['accuracy'] and  metrics['auc'] > self.best_metrics['auc'])
             )
             
             if should_update:
@@ -442,7 +440,6 @@ class Trainer:
             
             # Save metrics once
             self._log_metrics('train', epoch, metrics)
-            self._save_metrics_to_csv(metrics, 'train', epoch)
             
             return metrics
             
@@ -461,14 +458,9 @@ class Trainer:
 
         with autocast(device_type='cuda' if self.device=='cuda' else 'cpu'):
             # Forward pass
-            pred, domain_pred, feat_orig, feat_style, contrast_labels = \
-                self.model.shuffle_style_assembly(images, labels, domains, self.lambda_val)
-            
-            # Fix: Reshape prediction tensor correctly
-            pred = pred.view(pred.size(0), -1).mean(dim=1)  # Average over spatial dimensions
-            
-            losses = self._compute_losses(pred, domain_pred, labels, domains, 
-                                        feat_orig, feat_style, contrast_labels)
+            pred, domain_pred, feat_orig, feat_style, contrast_labels = self.model.shuffle_style_assembly(images, labels, domains, self.lambda_val)
+            pred = pred.view(pred.size(0), -1).mean(dim=1)
+            losses = self._compute_losses(pred, domain_pred, labels, domains, feat_orig, feat_style, contrast_labels)
 
         # Optimize
         self.optimizer.zero_grad()
