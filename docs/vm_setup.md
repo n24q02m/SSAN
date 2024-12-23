@@ -55,7 +55,7 @@ python -m src.main --mode train --protocol protocol_3 --epochs 3 --auto_hp --hp_
 
 - Test the main.py file with test mode and small arguments
 ```bash
-python -m src.main --mode test --protocol protocol_3 --checkpoints output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth --fraction 0.01 --no_workers
+python -m src.main --mode test --protocol protocol_3 --fraction 0.01 --no_workers --checkpoint output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth
 ```
 
 - Run the main.py file with train mode
@@ -65,7 +65,7 @@ python -m src.main --mode train --protocol protocol_1 --epochs 100 --auto_hp --h
 
 - Run the main.py file with test mode
 ```bash
-python -m src.main --mode test --protocol protocol_1 --checkpoints output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth --fraction 1.0 --no_workers
+python -m src.main --mode test --protocol protocol_1 --fraction 1.0 --no_workers --checkpoint output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth
 ```
 
 **5. Upload the Results**
