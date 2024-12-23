@@ -58,9 +58,5 @@ def main():
 
     print("\nAll datasets downloaded and extracted successfully!")
 
-    # Show directory structure 
-    print("\nDirectory structure:")
-    run_command("tree -L 2")
-
 if __name__ == "__main__":
     main()
