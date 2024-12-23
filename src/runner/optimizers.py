@@ -23,7 +23,7 @@ from src.runner.trainer import Trainer
 def find_optimal_batch_size(
     model: Module,
     sample_batch: tuple,
-    min_batch: int = 2,
+    min_batch: int = 4,
     max_batch: int = 128,
     max_memory_use: float = 0.8,
 ) -> int:
