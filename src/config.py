@@ -9,7 +9,7 @@ class Config:
         self.is_kaggle = 'KAGGLE_KERNEL_RUN_TYPE' in os.environ
         
         if self.is_kaggle:
-            self.root_dir = Path('/kaggle/working/SSAN_Enhance')
+            self.root_dir = Path('/kaggle/working/SSAN')
             self.data_dir = Path('/kaggle/input')
             self.dataset_paths = {
                 "CelebA_Spoof": self.data_dir / "celeba-spoof-face-anti-spoofing-dataset",
@@ -18,6 +18,7 @@ class Config:
                 "NUAAA": self.data_dir / "nuaaa-face-anti-spoofing-dataset",
                 "Zalo_AIC": self.data_dir / "zalo-aic-face-anti-spoofing-dataset"
             }
+            self.protocol_dir = self.root_dir / "protocols"
         else:
             self.root_dir = Path('.')
             self.data_dir = self.root_dir / "data"
@@ -28,9 +29,9 @@ class Config:
                 "NUAAA": self.data_dir / "NUAAA_dataset", 
                 "Zalo_AIC": self.data_dir / "Zalo_AIC_dataset"
             }
+            self.protocol_dir = self.data_dir / "protocols"
         
         self.output_dir = self.root_dir / "output"
-        self.protocol_dir = self.data_dir / "protocols"
 
         # Create necessary directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
