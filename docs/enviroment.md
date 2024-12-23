@@ -19,3 +19,8 @@ pip install --pre torch torchvision torchaudio --index-url https://download.pyto
 ```shell
 pip install -r requirements.txt
 ```
+
+- For redetect_datasets.py
+```
+pip install onnxruntime-gpu insightface
+```

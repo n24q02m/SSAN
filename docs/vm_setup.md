@@ -9,17 +9,25 @@ nvidia-smi
 ```
 - Find the right PyTorch version in [PyTorch](https://pytorch.org/)
 
-1. **Install Github Desktop & Sign In with token**
+2. **Install Github Desktop & Clone the Repository***
 
-- [Download Github Desktop](https://desktop.github.com/)
-- [Create a personal access token](https://github.com/settings/personal-access-tokens)
+- [Download Github Desktop](https://central.github.com/deployments/desktop/desktop/latest/win32)
+- Clone the repository using Github Desktop in C:\Users\Administrator\Desktop: https://github.com/n24q02m/SSAN.git
 
-3. **Clone the Repository & Install Dependencies**
+3. **Create a new Conda Environment & Install Dependencies**
 
-- Clone the repository using Github Desktop
-- **Open CMD in the repository folder** & Install dependencies without conda
+- Open Anaconda Prompt & Create a new conda environment
 ```bash
-pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
+conda create -n ssan python=3.10
+conda activate ssan
+```
+- Open the repository folder in Anaconda Prompt
+```bash
+cd C:\Users\Administrator\Desktop\SSAN
+```
+- Install dependencies (for ThueGPU's VM)
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 ```
 
@@ -28,8 +36,7 @@ pip install -r requirements.txt
 - Copy C:\Users\{username}\.kaggle\kaggle.json from local machine to VM
 - Download the required datasets
 ```bash
-chmod +x download_datasets.sh
-./download_datasets.sh
+python download_datasets.py
 ```
 
 5. **Run main.py**
