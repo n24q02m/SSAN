@@ -9,7 +9,12 @@ from torch.utils.data import DataLoader
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.model.ssan import SSAN
-from src.runner.optimizers import find_optimal_batch_size, find_optimal_workers, HyperparameterOptimizer
+from src.runner.optimizers import (
+    find_optimal_batch_size,
+    find_optimal_workers,
+    HyperparameterOptimizer,
+)
+
 
 class TestOptimizers:
     @pytest.fixture
@@ -22,23 +27,25 @@ class TestOptimizers:
         # Create small mock dataset with balanced labels
         self.dataset = []
         for i in range(16):  # 16 samples total
-            self.dataset.append((
-                torch.randn(3, self.img_size, self.img_size),  # Image
-                torch.randn(1, 32, 32),  # Depth map
-                torch.tensor(i % 2).long(),  # Alternate between 0/1 labels
-                torch.randint(0, self.num_domains, ()).long()  # Domain label
-            ))
-                
+            self.dataset.append(
+                (
+                    torch.randn(3, self.img_size, self.img_size),  # Image
+                    torch.randn(1, 32, 32),  # Depth map
+                    torch.tensor(i % 2).long(),  # Alternate between 0/1 labels
+                    torch.randint(0, self.num_domains, ()).long(),  # Domain label
+                )
+            )
+
         # Create dataloaders with balanced data
         self.train_loader = DataLoader(
-            self.dataset[:12],  # 12 training samples 
+            self.dataset[:12],  # 12 training samples
             batch_size=self.batch_size,
-            shuffle=True
+            shuffle=True,
         )
         self.val_loader = DataLoader(
             self.dataset[12:],  # 4 validation samples
             batch_size=self.batch_size,
-            shuffle=False
+            shuffle=False,
         )
 
         # Create model
@@ -50,14 +57,14 @@ class TestOptimizers:
         # Mock config with correct output path
         class Config:
             def __init__(self):
-                self.device = 'cpu'
+                self.device = "cpu"
                 self.num_domains = 5
                 self.num_epochs = 2
                 self.patience = 3
                 self.output_dir = Path("output/test_optimizers")
                 self.lambda_adv = 0.1
                 self.lambda_contrast = 0.1
-                    
+
         self.config = Config()
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -68,18 +75,19 @@ class TestOptimizers:
             sample_batch=self.sample_batch,
             min_batch=2,
             max_batch=8,
-            max_memory_use=0.8
+            max_memory_use=0.8,
         )
 
         # Check output
         assert isinstance(optimal_batch, int)
         assert 2 <= optimal_batch <= 8
-        
+
         # Test edge cases
         with pytest.raises(RuntimeError):
             find_optimal_batch_size(
-                self.model, self.sample_batch,
-                max_memory_use=1.5  # Invalid memory ratio
+                self.model,
+                self.sample_batch,
+                max_memory_use=1.5,  # Invalid memory ratio
             )
 
     def test_find_optimal_workers(self, setup):
@@ -89,13 +97,10 @@ class TestOptimizers:
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=1,
-            prefetch_factor=2
+            prefetch_factor=2,
         )
-        
-        optimal_workers = find_optimal_workers(
-            self.train_loader,
-            max_workers=4
-        )
+
+        optimal_workers = find_optimal_workers(self.train_loader, max_workers=4)
 
         assert isinstance(optimal_workers, int)
         assert 0 <= optimal_workers <= 4
@@ -105,12 +110,12 @@ class TestOptimizers:
         optimizer = HyperparameterOptimizer(
             model_class=SSAN,
             train_loader=self.train_loader,
-            val_loader=self.val_loader, 
+            val_loader=self.val_loader,
             config=self.config,
             study_name="test_study",
             n_trials=2,
             timeout=60,
-            output_dir=self.config.output_dir
+            output_dir=self.config.output_dir,
         )
 
         assert optimizer.model_class == SSAN
@@ -131,7 +136,7 @@ class TestOptimizers:
             study_name="test_optimization",
             n_trials=2,  # Small number for testing
             timeout=60,
-            output_dir=self.config.output_dir
+            output_dir=self.config.output_dir,
         )
 
         # Run optimization
@@ -140,9 +145,13 @@ class TestOptimizers:
         # Check results
         assert isinstance(best_params, dict)
         required_params = [
-            'learning_rate', 'weight_decay', 
-            'lambda_adv', 'lambda_contrast',
-            'optimizer', 'scheduler', 'dropout'
+            "learning_rate",
+            "weight_decay",
+            "lambda_adv",
+            "lambda_contrast",
+            "optimizer",
+            "scheduler",
+            "dropout",
         ]
         assert all(p in best_params for p in required_params)
 
@@ -155,6 +164,7 @@ class TestOptimizers:
         """Cleanup after each test"""
         yield
         shutil.rmtree(self.config.output_dir, ignore_errors=True)
-        
-if __name__ == '__main__':
+
+
+if __name__ == "__main__":
     pytest.main([__file__])
