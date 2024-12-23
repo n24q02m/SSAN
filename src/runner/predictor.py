@@ -10,6 +10,9 @@ import logging
 from tqdm import tqdm
 from typing import Dict, Optional, Tuple
 from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, auc
+import matplotlib
+
+matplotlib.use('Agg')
 
 class Predictor:
     """SSAN model predictor for inference"""
