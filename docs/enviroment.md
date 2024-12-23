@@ -24,8 +24,3 @@ pip install -r requirements.txt
 ```
 pip install onnxruntime-gpu insightface
 ```
-
-- For download_datasets.py
-```
-pip install kaggle
-```

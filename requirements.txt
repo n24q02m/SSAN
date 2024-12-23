@@ -9,3 +9,4 @@ prefetch_generator
 pytest
 optuna
 psutil
+kaggle
