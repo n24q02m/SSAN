@@ -9,7 +9,7 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import Config
-from src.data.datasets import get_dataloaders
+from src.data.datasets import get_dataloaders, create_protocol_splits
 from src.model.ssan import SSAN
 from src.model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
 from src.runner.trainer import Trainer
@@ -169,6 +169,9 @@ def main():
     print("\nInitializing...")
     config = Config()
     config.protocol = args.protocol
+    
+    print("\nCreating protocol splits...")
+    create_protocol_splits(config.dataset_paths, config)
     
     # Override config with args
     if args.no_workers:
