@@ -26,7 +26,7 @@ def download_dataset(dataset_name: str, output_dir: str) -> None:
     print(f"\nDownloading {dataset_name} dataset...")
     kaggle_command = (
         f"kaggle datasets download -d n24q02m/{dataset_name}-face-anti-spoofing-dataset "
-        f"-p {output_dir} --unzip"
+        f"-p data/{output_dir} --unzip"
     )
     run_command(kaggle_command)
 
