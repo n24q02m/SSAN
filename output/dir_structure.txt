@@ -158,11 +158,37 @@
     ├── docs/
     │   ├── Domain Generalization via Shuffled Style Assembly for Face Anti-Spoofing.pdf/
     │   ├── enviroment.md/
-    │   ├── plans.md/
     │   └── protocols.md/
     ├── output/
-    │   ├── optimizers/
-    │   │   └── test_optimization.db/
+    │   ├── hp_optimization/
+    │   │   ├── metrics/
+    │   │   │   ├── trial_0_metrics.csv/
+    │   │   │   ├── trial_1_metrics.csv/
+    │   │   │   └── trial_2_metrics.csv/
+    │   │   └── ssan_protocol_1.db/
+    │   ├── test_20241223_100656/
+    │   │   ├── csv/
+    │   │   │   ├── metrics.csv/
+    │   │   │   └── predictions.csv/
+    │   │   ├── logs/
+    │   │   │   └── inference.log/
+    │   │   └── plots/
+    │   │       └── roc_curve.png/
+    │   ├── train_20241223_092631/
+    │   │   ├── checkpoints/
+    │   │   │   ├── best.pth/
+    │   │   │   └── latest.pth/
+    │   │   ├── csv/
+    │   │   │   ├── train_metrics.csv/
+    │   │   │   └── val_metrics.csv/
+    │   │   ├── logs/
+    │   │   │   ├── final_results.txt/
+    │   │   │   └── training.log/
+    │   │   └── plots/
+    │   │       ├── accuracy_curve.png/
+    │   │       ├── auc_curve.png/
+    │   │       ├── hter_curve.png/
+    │   │       └── loss_curve.png/
     │   └── dir_structure.txt/
     ├── src/
     │   ├── __pycache__/
@@ -199,8 +225,10 @@
     │   ├── tests/
     │   │   ├── __pycache__/
     │   │   │   ├── __init__.cpython-310.pyc/
+    │   │   │   ├── test_datasets.cpython-310-pytest-8.3.4.pyc/
     │   │   │   ├── test_main.cpython-310-pytest-8.3.4.pyc/
     │   │   │   ├── test_optimizers.cpython-310-pytest-8.3.4.pyc/
+    │   │   │   ├── test_optimizers.cpython-310.pyc/
     │   │   │   ├── test_predictor.cpython-310-pytest-8.3.4.pyc/
     │   │   │   ├── test_results.cpython-310-pytest-8.3.4.pyc/
     │   │   │   ├── test_ssan.cpython-310-pytest-8.3.4.pyc/
@@ -263,5 +291,6 @@
     │   ├── README.md/
     │   └── solver.py/
     ├── .env/
+    ├── kaggle_run.ipynb/
     ├── README.md/
     └── requirements.txt/
