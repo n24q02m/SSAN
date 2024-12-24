@@ -243,6 +243,10 @@ def main():
     # Set random seed
     set_seed(config.seed)
 
+    # Tạo lại protocol splits
+    print("\nRecreating protocol splits...")
+    create_protocol_splits(config.dataset_paths, config)
+
     # Create dataloaders once
     print("\nLoading datasets...")
     dataloaders = get_dataloaders(config)
