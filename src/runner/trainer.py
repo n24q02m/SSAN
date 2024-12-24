@@ -502,23 +502,21 @@ class Trainer:
     def _train_step(self, batch) -> Dict[str, float]:
         """Execute one training step"""
         images, depth_maps, labels, domains = batch
-
+        
         images = images.to(self.device)
-        depth_maps = depth_maps.to(self.device)
+        depth_maps = depth_maps.to(self.device) 
         labels = labels.to(self.device)
         domains = domains.to(self.device)
 
         with autocast(device_type="cuda" if self.device == "cuda" else "cpu"):
             # Forward pass
-            pred, domain_pred, feat_orig, feat_style, contrast_labels = (
-                self.model.shuffle_style_assembly(
-                    images, labels, domains, self.lambda_val
-                )
+            pred, domain_pred, feat_orig, feat_style, contrast_labels = self.model.shuffle_style_assembly(
+                images, labels, domains, self.lambda_val
             )
             pred = pred.view(pred.size(0), -1).mean(dim=1)
             losses = self._compute_losses(
                 pred,
-                domain_pred,
+                domain_pred, 
                 labels,
                 domains,
                 feat_orig,
@@ -526,9 +524,13 @@ class Trainer:
                 contrast_labels,
             )
 
-        # Optimize
+        # Optimize với gradient clipping
         self.optimizer.zero_grad()
         self.scaler.scale(losses["total"]).backward()
+        
+        # Thêm gradient clipping
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        
         self.scaler.step(self.optimizer)
         self.scaler.update()
 

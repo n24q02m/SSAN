@@ -50,22 +50,22 @@ python download_datasets.py
 
 - Test the main.py file with train mode and small arguments
 ```bash
-python -m src.main --mode train --protocol protocol_3 --epochs 3 --auto_hp --hp_trials 3 --fraction 0.01 --no_workers
+python -m src.main --mode train --protocol protocol_3 --epochs 3 --auto_hp --fraction 0.01
 ```
 
 - Test the main.py file with test mode and small arguments
 ```bash
-python -m src.main --mode test --protocol protocol_3 --fraction 0.01 --no_workers --checkpoint output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth
+python -m src.main --mode test --protocol protocol_3 --fraction 0.01 --checkpoint output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth
 ```
 
 - Run the main.py file with train mode
 ```bash
-python -m src.main --mode train --protocol protocol_1 --epochs 100 --auto_hp --hp_trials 100 --fraction 1.0 --no_workers
+python -m src.main --mode train --protocol protocol_1 --epochs 100 --auto_hp --fraction 1.0
 ```
 
 - Run the main.py file with test mode
 ```bash
-python -m src.main --mode test --protocol protocol_1 --fraction 1.0 --no_workers --checkpoint output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth
+python -m src.main --mode test --protocol protocol_1 --fraction 1.0 --checkpoint output\train_{YYYYMMDD_HHMMSS}\checkpoints\best.pth
 ```
 
 **5. Upload the Results**
