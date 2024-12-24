@@ -76,26 +76,27 @@ class Config:
         self.lambda_contrast = 0.1  # Weight for contrastive loss
 
         # Early stopping
-        self.patience = 10
+        self.patience = 20
         self.early_stopping = True
+        self.min_epochs = 40
 
         # Debug config
         self.fraction = 1.0
 
         # Device config
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        
+
         # Multiprocessing configs
-        self.num_processes = None # Will be set dynamically
+        self.num_processes = None  # Will be set dynamically
         self.prefetch_factor = 2
         self.persistent_workers = True
-        
+
         # Memory management
         self.pin_memory = torch.cuda.is_available()
         self.non_blocking = True
-        
+
         # Mixed precision training
-        self.use_amp = True # Automatic Mixed Precision
-        
+        self.use_amp = True  # Automatic Mixed Precision
+
         # Data loading optimization
         self.num_workers = min(8, mp.cpu_count())

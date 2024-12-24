@@ -67,13 +67,7 @@ def split_data(dataset_paths, config):
         train_dirs = [dataset_paths["CelebA_Spoof"]]
         val_dirs = [dataset_paths["CelebA_Spoof"]]
         test_dirs = [dataset_paths["CelebA_Spoof"]]
-        config.ratios = {
-            "CelebA_Spoof": {
-                "train": 0.6,
-                "val": 0.2,
-                "test": 0.2
-            }
-        }
+        config.ratios = {"CelebA_Spoof": {"train": 0.6, "val": 0.2, "test": 0.2}}
 
     elif config.protocol == "protocol_2":
         # Multi-Scale Training (CelebA-Spoof + CATI-FAS)
@@ -83,36 +77,32 @@ def split_data(dataset_paths, config):
         config.ratios = {
             "CelebA_Spoof": {
                 "train": 0.3,  # 30% train
-                "val": 0.1,    # 10% val  
-                "test": 0.1    # 10% test
+                "val": 0.1,  # 10% val
+                "test": 0.1,  # 10% test
             },
             "CATI_FAS": {
                 "train": 0.6,  # 60% train
-                "val": 0.2,    # 20% val
-                "test": 0.2    # 20% test
-            }
+                "val": 0.2,  # 20% val
+                "test": 0.2,  # 20% test
+            },
         }
 
     elif config.protocol == "protocol_3":
-        # Cross-Dataset Evaluation  
+        # Cross-Dataset Evaluation
         train_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]]
-        val_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]] 
+        val_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]]
         test_dirs = [dataset_paths["LCC_FASD"], dataset_paths["NUAAA"]]
         config.ratios = {
             "CATI_FAS": {
                 "train": 0.8,  # 80% train
-                "val": 0.2,    # 20% val
+                "val": 0.2,  # 20% val
             },
             "Zalo_AIC": {
-                "train": 0.6,  # 60% train 
-                "val": 0.4,    # 40% val
+                "train": 0.6,  # 60% train
+                "val": 0.4,  # 40% val
             },
-            "LCC_FASD": {
-                "test": 0.3    # 30% test
-            },
-            "NUAAA": {
-                "test": 0.3    # 30% test
-            }
+            "LCC_FASD": {"test": 0.3},  # 30% test
+            "NUAAA": {"test": 0.3},  # 30% test
         }
 
     elif config.protocol == "protocol_4":
@@ -120,20 +110,17 @@ def split_data(dataset_paths, config):
         train_dirs = [
             dataset_paths["CATI_FAS"],
             dataset_paths["LCC_FASD"],
-            dataset_paths["NUAAA"], 
-            dataset_paths["Zalo_AIC"]
+            dataset_paths["NUAAA"],
+            dataset_paths["Zalo_AIC"],
         ]
         val_dirs = [dataset_paths["CelebA_Spoof"]]
         test_dirs = [dataset_paths["CelebA_Spoof"]]
         config.ratios = {
-            "CATI_FAS": {"train": 1.0},      # 100% train
-            "LCC_FASD": {"train": 1.0},      # 100% train 
-            "NUAAA": {"train": 1.0},         # 100% train
-            "Zalo_AIC": {"train": 1.0},      # 100% train
-            "CelebA_Spoof": {
-                "val": 0.025,   # 2.5% val
-                "test": 0.025   # 2.5% test
-            }
+            "CATI_FAS": {"train": 1.0},  # 100% train
+            "LCC_FASD": {"train": 1.0},  # 100% train
+            "NUAAA": {"train": 1.0},  # 100% train
+            "Zalo_AIC": {"train": 1.0},  # 100% train
+            "CelebA_Spoof": {"val": 0.025, "test": 0.025},  # 2.5% val  # 2.5% test
         }
 
     else:
@@ -162,20 +149,22 @@ def create_protocol_data(protocol, dataset_paths, config):
             dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
         else:
             dataset_name = dataset_name.replace("_dataset", "")
-        
+
         for folder, label in [("live", 1), ("spoof", 0)]:
             folder_dir = Path(data_dir) / folder
             if not folder_dir.exists():
                 continue
-                
+
             for img_path in folder_dir.glob("*.[jp][pn][g]"):
                 if (img_path.parent / f"{img_path.stem}_BB.txt").exists():
-                    train_data.append({
-                        "dataset": dataset_name,
-                        "filename": img_path.stem,
-                        "label": label,
-                        "folder": folder
-                    })
+                    train_data.append(
+                        {
+                            "dataset": dataset_name,
+                            "filename": img_path.stem,
+                            "label": label,
+                            "folder": folder,
+                        }
+                    )
 
     # Same for validation dirs
     for data_dir in val_dirs:
@@ -184,20 +173,22 @@ def create_protocol_data(protocol, dataset_paths, config):
             dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
         else:
             dataset_name = dataset_name.replace("_dataset", "")
-            
+
         for folder, label in [("live", 1), ("spoof", 0)]:
             folder_dir = Path(data_dir) / folder
             if not folder_dir.exists():
                 continue
-                
+
             for img_path in folder_dir.glob("*.[jp][pn][g]"):
                 if (img_path.parent / f"{img_path.stem}_BB.txt").exists():
-                    val_data.append({
-                        "dataset": dataset_name,
-                        "filename": img_path.stem,
-                        "label": label, 
-                        "folder": folder
-                    })
+                    val_data.append(
+                        {
+                            "dataset": dataset_name,
+                            "filename": img_path.stem,
+                            "label": label,
+                            "folder": folder,
+                        }
+                    )
 
     # And test dirs
     for data_dir in test_dirs:
@@ -206,24 +197,26 @@ def create_protocol_data(protocol, dataset_paths, config):
             dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
         else:
             dataset_name = dataset_name.replace("_dataset", "")
-            
+
         for folder, label in [("live", 1), ("spoof", 0)]:
             folder_dir = Path(data_dir) / folder
             if not folder_dir.exists():
                 continue
-                
+
             for img_path in folder_dir.glob("*.[jp][pn][g]"):
                 if (img_path.parent / f"{img_path.stem}_BB.txt").exists():
-                    test_data.append({
-                        "dataset": dataset_name,
-                        "filename": img_path.stem,
-                        "label": label,
-                        "folder": folder
-                    })
+                    test_data.append(
+                        {
+                            "dataset": dataset_name,
+                            "filename": img_path.stem,
+                            "label": label,
+                            "folder": folder,
+                        }
+                    )
 
     # Convert to DataFrames
     train_df = pd.DataFrame(train_data)
-    val_df = pd.DataFrame(val_data) 
+    val_df = pd.DataFrame(val_data)
     test_df = pd.DataFrame(test_data)
 
     # Apply dataset ratios if defined
@@ -233,42 +226,54 @@ def create_protocol_data(protocol, dataset_paths, config):
             if "train" in ratios.keys() and not train_df.empty:
                 dataset_indices = train_df[train_df["dataset"] == dataset_name].index
                 if len(dataset_indices) > 0:
-                    size = int(len(dataset_indices) * ratios["train"]) 
-                    keep_indices = np.random.choice(dataset_indices, size=size, replace=False)
-                    train_df = pd.concat([
-                        train_df[train_df["dataset"] != dataset_name],
-                        train_df.loc[keep_indices]
-                    ])
-                    
+                    size = int(len(dataset_indices) * ratios["train"])
+                    keep_indices = np.random.choice(
+                        dataset_indices, size=size, replace=False
+                    )
+                    train_df = pd.concat(
+                        [
+                            train_df[train_df["dataset"] != dataset_name],
+                            train_df.loc[keep_indices],
+                        ]
+                    )
+
             if "val" in ratios.keys() and not val_df.empty:
                 dataset_indices = val_df[val_df["dataset"] == dataset_name].index
                 if len(dataset_indices) > 0:
                     size = int(len(dataset_indices) * ratios["val"])
-                    keep_indices = np.random.choice(dataset_indices, size=size, replace=False)
-                    val_df = pd.concat([
-                        val_df[val_df["dataset"] != dataset_name],
-                        val_df.loc[keep_indices]
-                    ])
-                    
+                    keep_indices = np.random.choice(
+                        dataset_indices, size=size, replace=False
+                    )
+                    val_df = pd.concat(
+                        [
+                            val_df[val_df["dataset"] != dataset_name],
+                            val_df.loc[keep_indices],
+                        ]
+                    )
+
             if "test" in ratios.keys() and not test_df.empty:
                 dataset_indices = test_df[test_df["dataset"] == dataset_name].index
                 if len(dataset_indices) > 0:
-                    size = int(len(dataset_indices) * ratios["test"]) 
-                    keep_indices = np.random.choice(dataset_indices, size=size, replace=False)
-                    test_df = pd.concat([
-                        test_df[test_df["dataset"] != dataset_name],
-                        test_df.loc[keep_indices]
-                    ])
+                    size = int(len(dataset_indices) * ratios["test"])
+                    keep_indices = np.random.choice(
+                        dataset_indices, size=size, replace=False
+                    )
+                    test_df = pd.concat(
+                        [
+                            test_df[test_df["dataset"] != dataset_name],
+                            test_df.loc[keep_indices],
+                        ]
+                    )
 
     # Save splits
     if not train_df.empty:
         train_df.to_csv(protocol_dir / "train.csv", index=False)
         print(f"Created train.csv with {len(train_df)} samples")
-        
+
     if not val_df.empty:
-        val_df.to_csv(protocol_dir / "val.csv", index=False) 
+        val_df.to_csv(protocol_dir / "val.csv", index=False)
         print(f"Created val.csv with {len(val_df)} samples")
-        
+
     if not test_df.empty:
         test_df.to_csv(protocol_dir / "test.csv", index=False)
         print(f"Created test.csv with {len(test_df)} samples")
@@ -279,11 +284,17 @@ def create_protocol_splits(dataset_paths, config):
     protocols = ["protocol_1", "protocol_2", "protocol_3", "protocol_4"]
 
     # Use ProcessPoolExecutor for parallel protocol creation
-    with ProcessPoolExecutor(max_workers=min(len(protocols), mp.cpu_count())) as executor:
-        list(executor.map(
-            partial(create_protocol_data, dataset_paths=dataset_paths, config=config),
-            protocols
-        ))
+    with ProcessPoolExecutor(
+        max_workers=min(len(protocols), mp.cpu_count())
+    ) as executor:
+        list(
+            executor.map(
+                partial(
+                    create_protocol_data, dataset_paths=dataset_paths, config=config
+                ),
+                protocols,
+            )
+        )
 
 
 def format_filename(filename):
@@ -301,9 +312,9 @@ def parallel_process_image(args):
     try:
         dataset_dir = config.data_dir / dataset_map[row["dataset"]]
         img_dir = dataset_dir / row["folder"]
-        
+
         filename = format_filename(row["filename"])
-        
+
         # Try both extensions
         img_patterns = [f"{filename}.jpg", f"{filename}.png"]
         img_path = None
@@ -312,19 +323,19 @@ def parallel_process_image(args):
             if potential_path.exists():
                 img_path = potential_path
                 break
-                
+
         if img_path is None:
             return None
 
         bbox_path = img_path.parent / f"{filename}_BB.txt"
         if not bbox_path.exists():
             return None
-            
+
         with open(bbox_path) as f:
             x, y, w, h = map(int, f.read().strip().split()[:4])
-            
+
         return {"img_path": img_path, "bbox": (x, y, w, h)}
-        
+
     except Exception as e:
         return None
 
@@ -388,11 +399,10 @@ class FASDataset(Dataset):
                 row = self.data.iloc[idx]
                 futures.append(
                     executor.submit(
-                        parallel_process_image, 
-                        (idx, row, config, self.dataset_map)
+                        parallel_process_image, (idx, row, config, self.dataset_map)
                     )
                 )
-            
+
             # Collect results with progress bar
             with tqdm(total=len(futures), desc="Processing images") as pbar:
                 self.cached_paths = []
@@ -404,7 +414,7 @@ class FASDataset(Dataset):
 
         if not self.cached_paths:
             raise RuntimeError("No valid images found in dataset")
-            
+
         print(f"Successfully loaded {len(self.cached_paths)} valid images")
 
     def __len__(self):
@@ -465,6 +475,7 @@ class FASDataset(Dataset):
 
 class DataLoaderX(DataLoader):
     """DataLoader with background generator for faster data loading"""
+
     def __iter__(self):
         return BackgroundGenerator(super().__iter__(), max_prefetch=mp.cpu_count() * 2)
 
@@ -525,10 +536,10 @@ def get_dataloaders(config):
             train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
-            num_workers=min(mp.cpu_count(), 8), # Limit max workers
+            num_workers=min(mp.cpu_count(), 8),  # Limit max workers
             pin_memory=pin_memory,
             prefetch_factor=2,
-            persistent_workers=True
+            persistent_workers=True,
         ),
         "val": DataLoaderX(
             val_dataset,

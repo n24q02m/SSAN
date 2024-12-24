@@ -79,6 +79,9 @@ class Trainer:
         self.patience = config.patience
         self.early_stopping_counter = 0
         self.best_val_loss = float("inf")
+        self.best_score = float("-inf")
+        self.score_history = []
+        self.min_epochs = config.min_epochs
         self.should_stop = False
 
         # Setup output directory first
@@ -333,37 +336,39 @@ class Trainer:
         best_str = " ".join([f"{k}={v:.6f}" for k, v in self.best_metrics.items()])
         self.logger.info(f"Best validation metrics: {best_str}")
 
-    def _check_early_stopping(self, val_loss: float) -> bool:
-        """Check if training should stop early
+    def _check_early_stopping(self, val_metrics: Dict[str, float]) -> bool:
+        """Check early stopping condition based on multiple metrics"""
+        # Không check early stopping nếu chưa đạt số epoch tối thiểu
+        if len(self.score_history) < self.min_epochs:
+            return False
 
-        Args:
-            val_loss: Current validation loss
+        # Kiểm tra cả accuracy và loss
+        current_score = val_metrics["accuracy"] - val_metrics["loss"] * 0.5
 
-        Returns:
-            True if training should stop, False otherwise
-        """
-        if val_loss < self.best_val_loss:
-            self.best_val_loss = val_loss
+        if current_score > self.best_score:
+            self.best_score = current_score
             self.early_stopping_counter = 0
-        else:
-            self.early_stopping_counter += 1
+            return False
 
-        # Add maximum counter to force stop
-        max_patience = self.patience * 2
-        if self.early_stopping_counter >= max_patience:
-            self.should_stop = True
-            self.logger.info(
-                f"Forced early stopping after {max_patience} epochs without improvement"
-            )
-            return True
+        self.early_stopping_counter += 1
 
+        # Chỉ dừng khi không cải thiện trong nhiều epochs
         if self.early_stopping_counter >= self.patience:
-            self.should_stop = True
+            # Kiểm tra thêm điều kiện về độ biến thiên
+            recent_scores = self.score_history[-self.patience :]
+            score_std = np.std(recent_scores)
+
+            # Nếu độ biến thiên vẫn lớn, tiếp tục train
+            if score_std > 0.01:
+                self.early_stopping_counter = 0
+                return False
+
             self.logger.info(
                 f"Early stopping triggered after {self.patience} epochs without improvement"
             )
+            return True
 
-        return self.should_stop
+        return False
 
     def _save_metrics_to_csv(
         self, metrics: Dict[str, float], mode: str, epoch: int
@@ -493,6 +498,14 @@ class Trainer:
             # Save metrics once
             self._log_metrics("train", epoch, metrics)
 
+            # Lưu lại lịch sử score để tính độ biến thiên
+            current_score = metrics["accuracy"] - metrics["loss"] * 0.5
+            self.score_history.append(current_score)
+
+            # Kiểm tra early stopping với nhiều metrics
+            if self._check_early_stopping(metrics):
+                self.should_stop = True
+
             return metrics
 
         except Exception as e:
@@ -502,21 +515,23 @@ class Trainer:
     def _train_step(self, batch) -> Dict[str, float]:
         """Execute one training step"""
         images, depth_maps, labels, domains = batch
-        
+
         images = images.to(self.device)
-        depth_maps = depth_maps.to(self.device) 
+        depth_maps = depth_maps.to(self.device)
         labels = labels.to(self.device)
         domains = domains.to(self.device)
 
         with autocast(device_type="cuda" if self.device == "cuda" else "cpu"):
             # Forward pass
-            pred, domain_pred, feat_orig, feat_style, contrast_labels = self.model.shuffle_style_assembly(
-                images, labels, domains, self.lambda_val
+            pred, domain_pred, feat_orig, feat_style, contrast_labels = (
+                self.model.shuffle_style_assembly(
+                    images, labels, domains, self.lambda_val
+                )
             )
             pred = pred.view(pred.size(0), -1).mean(dim=1)
             losses = self._compute_losses(
                 pred,
-                domain_pred, 
+                domain_pred,
                 labels,
                 domains,
                 feat_orig,
@@ -527,10 +542,10 @@ class Trainer:
         # Optimize với gradient clipping
         self.optimizer.zero_grad()
         self.scaler.scale(losses["total"]).backward()
-        
+
         # Thêm gradient clipping
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-        
+
         self.scaler.step(self.optimizer)
         self.scaler.update()
 
@@ -589,7 +604,7 @@ class Trainer:
                 self._plot_training_curves()
 
                 # Early stopping check
-                if self._check_early_stopping(val_metrics["loss"]):
+                if self._check_early_stopping(val_metrics):
                     break
 
             # Final evaluation

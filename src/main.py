@@ -169,22 +169,25 @@ def configure_process_pool():
 
 class ParameterCache:
     """Cache class for optimal parameters"""
+
     def __init__(self):
         self._cache = {}
         self._found = False
-        
+
     def get(self, key):
         return self._cache.get(key) if self._found else None
-        
+
     def set(self, key, value):
         self._cache[key] = value
         self._found = True
-        
+
     def has_optimal_params(self):
         return self._found
 
-# Create global cache instance 
+
+# Create global cache instance
 parameter_cache = ParameterCache()
+
 
 def get_optimal_parameters(model, sample_batch, train_loader, device):
     """Calculate optimal parameters"""
@@ -192,18 +195,20 @@ def get_optimal_parameters(model, sample_batch, train_loader, device):
     workers = find_optimal_workers(train_loader)
     return batch_size, workers
 
+
 def clear_gpu_memory():
     """Clear GPU memory cache"""
     if torch.cuda.is_available():
         empty_cache()
         gc.collect()
 
+
 def main():
     args = parse_args()
-    
+
     # Configure process pool
     num_processes = configure_process_pool()
-    
+
     # Clear GPU memory before starting
     clear_gpu_memory()
 
@@ -252,29 +257,29 @@ def main():
     # Move model to device
     if args.device == "cuda":
         model = model.to(args.device)
-        
+
     print("\nFinding optimal parameters...")
     # Only find optimal parameters if not cached
     if not parameter_cache.has_optimal_params():
         if not args.batch_size or not args.num_workers:
             sample_batch = next(iter(dataloaders["train"]))
-            
+
             if not args.batch_size:
                 print("Finding optimal batch size...")
                 config.batch_size = find_optimal_batch_size(model, sample_batch)
                 print(f"Optimal batch size: {config.batch_size}")
-            
+
             if not args.num_workers:
                 print("Finding optimal number of workers...")
                 config.num_workers = find_optimal_workers(dataloaders["train"])
                 print(f"Optimal workers: {config.num_workers}")
-            
+
             # Cache the parameters
             parameter_cache.set(
                 f"{args.device}_{config.img_size}_{config.protocol}",
-                (config.batch_size, config.num_workers)
+                (config.batch_size, config.num_workers),
             )
-            
+
             # Recreate dataloaders with optimal values
             print("\nRecreating dataloaders with optimal values...")
             dataloaders = get_dataloaders(config)
@@ -331,7 +336,7 @@ def main():
             # Enable cuDNN benchmarking
             if args.device == "cuda":
                 torch.backends.cudnn.benchmark = True
-                
+
             # Use gradient scaling for mixed precision training
             scaler = torch.amp.GradScaler()
 
@@ -351,7 +356,7 @@ def main():
             # Train with final parameters
             best_metrics = trainer.train()
             print("Training completed. Best metrics:", best_metrics)
-            
+
             # Clear memory after training
             clear_gpu_memory()
 
@@ -379,7 +384,7 @@ def main():
                 # Run prediction
                 results = predictor.predict()
                 print("Testing completed")
-                
+
             clear_gpu_memory()
 
     return best_metrics
