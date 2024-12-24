@@ -4,12 +4,13 @@ import cv2
 import torch
 import pandas as pd
 from pathlib import Path
+import multiprocessing as mp
+from functools import partial
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-import multiprocessing as mp
-from functools import partial
-from torch.utils.data import DataLoader, Dataset
 from prefetch_generator import BackgroundGenerator
 from tqdm import tqdm
 
@@ -66,44 +67,74 @@ def split_data(dataset_paths, config):
         train_dirs = [dataset_paths["CelebA_Spoof"]]
         val_dirs = [dataset_paths["CelebA_Spoof"]]
         test_dirs = [dataset_paths["CelebA_Spoof"]]
-        config.train_ratio = 0.6  # 60% train, 20% val, 20% test
+        config.ratios = {
+            "CelebA_Spoof": {
+                "train": 0.6,
+                "val": 0.2,
+                "test": 0.2
+            }
+        }
 
     elif config.protocol == "protocol_2":
         # Multi-Scale Training (CelebA-Spoof + CATI-FAS)
         train_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["CATI_FAS"]]
         val_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["CATI_FAS"]]
         test_dirs = [dataset_paths["CelebA_Spoof"], dataset_paths["CATI_FAS"]]
-        # CelebA-Spoof: 30%(train)/10%(val)/10%(test)
-        # CATI-FAS: 60%(train)/20%(val)/20%(test)
-        config.train_ratio = {
-            "CelebA_Spoof": 0.6,  # 30% of total = 60% of 50%
-            "CATI_FAS": 0.6,  # 60% of total
+        config.ratios = {
+            "CelebA_Spoof": {
+                "train": 0.3,  # 30% train
+                "val": 0.1,    # 10% val  
+                "test": 0.1    # 10% test
+            },
+            "CATI_FAS": {
+                "train": 0.6,  # 60% train
+                "val": 0.2,    # 20% val
+                "test": 0.2    # 20% test
+            }
         }
 
     elif config.protocol == "protocol_3":
-        # Cross-Dataset Evaluation
+        # Cross-Dataset Evaluation  
         train_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]]
-        val_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]]
+        val_dirs = [dataset_paths["CATI_FAS"], dataset_paths["Zalo_AIC"]] 
         test_dirs = [dataset_paths["LCC_FASD"], dataset_paths["NUAAA"]]
-        # CATI-FAS: 80%(train)/20%(val)
-        # Zalo-AIC: 60%(train)/40%(val)
-        # LCC-FASD, NUAAA: 30%(test)
-        config.train_ratio = {"CATI_FAS": 0.8, "Zalo_AIC": 0.6}
+        config.ratios = {
+            "CATI_FAS": {
+                "train": 0.8,  # 80% train
+                "val": 0.2,    # 20% val
+            },
+            "Zalo_AIC": {
+                "train": 0.6,  # 60% train 
+                "val": 0.4,    # 40% val
+            },
+            "LCC_FASD": {
+                "test": 0.3    # 30% test
+            },
+            "NUAAA": {
+                "test": 0.3    # 30% test
+            }
+        }
 
     elif config.protocol == "protocol_4":
         # Domain Generalization
         train_dirs = [
             dataset_paths["CATI_FAS"],
             dataset_paths["LCC_FASD"],
-            dataset_paths["NUAAA"],
-            dataset_paths["Zalo_AIC"],
+            dataset_paths["NUAAA"], 
+            dataset_paths["Zalo_AIC"]
         ]
         val_dirs = [dataset_paths["CelebA_Spoof"]]
         test_dirs = [dataset_paths["CelebA_Spoof"]]
-        # All medium datasets for training
-        # CelebA-Spoof: 2.5%(val)/2.5%(test)
-        config.train_ratio = 1.0  # Use all data for training
-        config.val_test_ratio = 0.025  # 2.5% for val/test each
+        config.ratios = {
+            "CATI_FAS": {"train": 1.0},      # 100% train
+            "LCC_FASD": {"train": 1.0},      # 100% train 
+            "NUAAA": {"train": 1.0},         # 100% train
+            "Zalo_AIC": {"train": 1.0},      # 100% train
+            "CelebA_Spoof": {
+                "val": 0.025,   # 2.5% val
+                "test": 0.025   # 2.5% test
+            }
+        }
 
     else:
         raise ValueError(f"Invalid protocol: {config.protocol}")
@@ -119,77 +150,140 @@ def create_protocol_data(protocol, dataset_paths, config):
     protocol_dir = config.protocol_dir / protocol
     protocol_dir.mkdir(parents=True, exist_ok=True)
 
-    all_data = {}
-    for mode, dirs in [("train", train_dirs), ("val", val_dirs), ("test", test_dirs)]:
-        data = []
-        for data_dir in dirs:
-            dataset_name = Path(data_dir).name
-            if config.is_kaggle:
-                dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
-            else:
-                dataset_name = dataset_name.replace("_dataset", "")
+    # Initialize dictionaries for each split
+    train_data = []
+    val_data = []
+    test_data = []
 
-            for folder, label in [("live", 1), ("spoof", 0)]:
-                folder_dir = Path(data_dir) / folder
-                data.extend(
-                    [
-                        {
-                            "dataset": dataset_name,
-                            "filename": img_path.stem,
-                            "label": label,
-                            "folder": folder,
-                        }
-                        for img_path in folder_dir.glob("*.[jp][pn][g]")
-                        if (img_path.parent / f"{img_path.stem}_BB.txt").exists()
-                    ]
-                )
-
-        all_data[mode] = pd.DataFrame(data)
-
-    # Train/val split
-    if "train" in all_data:
-        if isinstance(config.train_ratio, dict):
-            # Handle per-dataset ratios
-            train_dfs = []
-            for dataset_name, ratio in config.train_ratio.items():
-                dataset_df = all_data["train"][
-                    all_data["train"]["dataset"] == dataset_name
-                ]
-                train_dfs.append(
-                    dataset_df.sample(frac=ratio, random_state=config.seed)
-                )
-            train_df = pd.concat(train_dfs)
+    # Process each split separately to avoid DataFrame concurrency issues
+    for data_dir in train_dirs:
+        dataset_name = Path(data_dir).name
+        if config.is_kaggle:
+            dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
         else:
-            # Use global ratio
-            train_df = all_data["train"].sample(
-                frac=config.train_ratio, random_state=config.seed
-            )
+            dataset_name = dataset_name.replace("_dataset", "")
+        
+        for folder, label in [("live", 1), ("spoof", 0)]:
+            folder_dir = Path(data_dir) / folder
+            if not folder_dir.exists():
+                continue
+                
+            for img_path in folder_dir.glob("*.[jp][pn][g]"):
+                if (img_path.parent / f"{img_path.stem}_BB.txt").exists():
+                    train_data.append({
+                        "dataset": dataset_name,
+                        "filename": img_path.stem,
+                        "label": label,
+                        "folder": folder
+                    })
 
+    # Same for validation dirs
+    for data_dir in val_dirs:
+        dataset_name = Path(data_dir).name
+        if config.is_kaggle:
+            dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
+        else:
+            dataset_name = dataset_name.replace("_dataset", "")
+            
+        for folder, label in [("live", 1), ("spoof", 0)]:
+            folder_dir = Path(data_dir) / folder
+            if not folder_dir.exists():
+                continue
+                
+            for img_path in folder_dir.glob("*.[jp][pn][g]"):
+                if (img_path.parent / f"{img_path.stem}_BB.txt").exists():
+                    val_data.append({
+                        "dataset": dataset_name,
+                        "filename": img_path.stem,
+                        "label": label, 
+                        "folder": folder
+                    })
+
+    # And test dirs
+    for data_dir in test_dirs:
+        dataset_name = Path(data_dir).name
+        if config.is_kaggle:
+            dataset_name = dataset_name.replace("-face-anti-spoofing-dataset", "")
+        else:
+            dataset_name = dataset_name.replace("_dataset", "")
+            
+        for folder, label in [("live", 1), ("spoof", 0)]:
+            folder_dir = Path(data_dir) / folder
+            if not folder_dir.exists():
+                continue
+                
+            for img_path in folder_dir.glob("*.[jp][pn][g]"):
+                if (img_path.parent / f"{img_path.stem}_BB.txt").exists():
+                    test_data.append({
+                        "dataset": dataset_name,
+                        "filename": img_path.stem,
+                        "label": label,
+                        "folder": folder
+                    })
+
+    # Convert to DataFrames
+    train_df = pd.DataFrame(train_data)
+    val_df = pd.DataFrame(val_data) 
+    test_df = pd.DataFrame(test_data)
+
+    # Apply dataset ratios if defined
+    if config.ratios:
+        for dataset_name, ratios in config.ratios.items():
+            # Kiểm tra ratios[split] thay vì split in ratios
+            if "train" in ratios.keys() and not train_df.empty:
+                dataset_indices = train_df[train_df["dataset"] == dataset_name].index
+                if len(dataset_indices) > 0:
+                    size = int(len(dataset_indices) * ratios["train"]) 
+                    keep_indices = np.random.choice(dataset_indices, size=size, replace=False)
+                    train_df = pd.concat([
+                        train_df[train_df["dataset"] != dataset_name],
+                        train_df.loc[keep_indices]
+                    ])
+                    
+            if "val" in ratios.keys() and not val_df.empty:
+                dataset_indices = val_df[val_df["dataset"] == dataset_name].index
+                if len(dataset_indices) > 0:
+                    size = int(len(dataset_indices) * ratios["val"])
+                    keep_indices = np.random.choice(dataset_indices, size=size, replace=False)
+                    val_df = pd.concat([
+                        val_df[val_df["dataset"] != dataset_name],
+                        val_df.loc[keep_indices]
+                    ])
+                    
+            if "test" in ratios.keys() and not test_df.empty:
+                dataset_indices = test_df[test_df["dataset"] == dataset_name].index
+                if len(dataset_indices) > 0:
+                    size = int(len(dataset_indices) * ratios["test"]) 
+                    keep_indices = np.random.choice(dataset_indices, size=size, replace=False)
+                    test_df = pd.concat([
+                        test_df[test_df["dataset"] != dataset_name],
+                        test_df.loc[keep_indices]
+                    ])
+
+    # Save splits
+    if not train_df.empty:
         train_df.to_csv(protocol_dir / "train.csv", index=False)
         print(f"Created train.csv with {len(train_df)} samples")
-
-        if "val" in all_data:
-            val_df = all_data["val"][
-                ~all_data["val"]["filename"].isin(train_df["filename"])
-            ]
-            val_df.to_csv(protocol_dir / "val.csv", index=False)
-            print(f"Created val.csv with {len(val_df)} samples")
-
-    if "test" in all_data:
-        all_data["test"].to_csv(protocol_dir / "test.csv", index=False)
-        print(f"Created test.csv with {len(all_data['test'])} samples")
+        
+    if not val_df.empty:
+        val_df.to_csv(protocol_dir / "val.csv", index=False) 
+        print(f"Created val.csv with {len(val_df)} samples")
+        
+    if not test_df.empty:
+        test_df.to_csv(protocol_dir / "test.csv", index=False)
+        print(f"Created test.csv with {len(test_df)} samples")
 
 
 def create_protocol_splits(dataset_paths, config):
-    """Create CSV files for all protocols in parallel"""
+    """Create CSV files for all protocols in parallel using ProcessPoolExecutor"""
     protocols = ["protocol_1", "protocol_2", "protocol_3", "protocol_4"]
 
-    # Sử dụng multiprocessing để xử lý song song các protocol
-    with mp.Pool(min(len(protocols), mp.cpu_count())) as pool:
-        pool.map(
+    # Use ProcessPoolExecutor for parallel protocol creation
+    with ProcessPoolExecutor(max_workers=min(len(protocols), mp.cpu_count())) as executor:
+        list(executor.map(
             partial(create_protocol_data, dataset_paths=dataset_paths, config=config),
-            protocols,
-        )
+            protocols
+        ))
 
 
 def format_filename(filename):
@@ -199,6 +293,40 @@ def format_filename(filename):
         return f"{int(filename):06d}"
     except ValueError:
         return filename
+
+
+def parallel_process_image(args):
+    """Process single image in parallel"""
+    idx, row, config, dataset_map = args
+    try:
+        dataset_dir = config.data_dir / dataset_map[row["dataset"]]
+        img_dir = dataset_dir / row["folder"]
+        
+        filename = format_filename(row["filename"])
+        
+        # Try both extensions
+        img_patterns = [f"{filename}.jpg", f"{filename}.png"]
+        img_path = None
+        for pattern in img_patterns:
+            potential_path = img_dir / pattern
+            if potential_path.exists():
+                img_path = potential_path
+                break
+                
+        if img_path is None:
+            return None
+
+        bbox_path = img_path.parent / f"{filename}_BB.txt"
+        if not bbox_path.exists():
+            return None
+            
+        with open(bbox_path) as f:
+            x, y, w, h = map(int, f.read().strip().split()[:4])
+            
+        return {"img_path": img_path, "bbox": (x, y, w, h)}
+        
+    except Exception as e:
+        return None
 
 
 class FASDataset(Dataset):
@@ -253,52 +381,30 @@ class FASDataset(Dataset):
         self.cached_paths = []
         self.data["filename"] = self.data["filename"].apply(format_filename)
 
-        for idx in range(len(self.data)):
-            try:
+        # Process images in parallel using ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=mp.cpu_count()) as executor:
+            futures = []
+            for idx in range(len(self.data)):
                 row = self.data.iloc[idx]
-                dataset_dir = config.data_dir / self.dataset_map[row["dataset"]]
-
-                img_dir = dataset_dir / row["folder"]
-                if not img_dir.exists():
-                    raise FileNotFoundError(f"Directory not found: {img_dir}")
-
-                # Đã chuẩn hóa filename thành 6 chữ số
-                filename = row["filename"]  # Now already in 6 digits format
-
-                # Try both jpg and png extensions
-                img_patterns = [f"{filename}.jpg", f"{filename}.png"]
-                img_path = None
-                for pattern in img_patterns:
-                    potential_path = img_dir / pattern
-                    if potential_path.exists():
-                        img_path = potential_path
-                        break
-
-                if img_path is None:
-                    raise FileNotFoundError(
-                        f"No image file found for {filename} in {img_dir}"
+                futures.append(
+                    executor.submit(
+                        parallel_process_image, 
+                        (idx, row, config, self.dataset_map)
                     )
-
-                bbox_path = img_path.parent / f"{filename}_BB.txt"
-                if not bbox_path.exists():
-                    raise FileNotFoundError(f"Bbox file not found: {bbox_path}")
-
-                # Read bbox coordinates
-                with open(bbox_path) as f:
-                    x, y, w, h = map(int, f.read().strip().split()[:4])
-
-                self.cached_paths.append({"img_path": img_path, "bbox": (x, y, w, h)})
-
-            except Exception as e:
-                print(f"\nError processing row {idx}:")
-                print(f"Dataset: {row['dataset']}")
-                print(f"Filename: {row['filename']}")
-                print(f"Error: {str(e)}")
-                continue
+                )
+            
+            # Collect results with progress bar
+            with tqdm(total=len(futures), desc="Processing images") as pbar:
+                self.cached_paths = []
+                for future in futures:
+                    result = future.result()
+                    if result is not None:
+                        self.cached_paths.append(result)
+                    pbar.update(1)
 
         if not self.cached_paths:
             raise RuntimeError("No valid images found in dataset")
-
+            
         print(f"Successfully loaded {len(self.cached_paths)} valid images")
 
     def __len__(self):
@@ -358,8 +464,9 @@ class FASDataset(Dataset):
 
 
 class DataLoaderX(DataLoader):
+    """DataLoader with background generator for faster data loading"""
     def __iter__(self):
-        return BackgroundGenerator(super().__iter__())
+        return BackgroundGenerator(super().__iter__(), max_prefetch=mp.cpu_count() * 2)
 
 
 def get_dataloaders(config):
@@ -418,8 +525,10 @@ def get_dataloaders(config):
             train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
-            num_workers=config.num_workers,
+            num_workers=min(mp.cpu_count(), 8), # Limit max workers
             pin_memory=pin_memory,
+            prefetch_factor=2,
+            persistent_workers=True
         ),
         "val": DataLoaderX(
             val_dataset,

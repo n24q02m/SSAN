@@ -51,8 +51,7 @@ class Config:
         # Training configs
         self.dataset_names = None
         self.protocol = None
-        self.train_ratio = None
-        self.val_test_ratio = None
+        self.ratios = None
 
         # Training hyperparameters
         self.num_epochs = 100
