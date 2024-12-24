@@ -14,7 +14,11 @@ from torch.cuda import empty_cache
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import Config
-from src.data.datasets import get_dataloaders, create_protocol_splits
+from src.data.datasets import (
+    create_protocol_data,
+    get_dataloaders,
+    create_protocol_splits,
+)
 from src.model.ssan import SSAN
 from src.model.losses import ClassificationLoss, ContrastiveLoss, DomainAdversarialLoss
 from src.runner.trainer import Trainer
@@ -243,9 +247,9 @@ def main():
     # Set random seed
     set_seed(config.seed)
 
-    # Tạo lại protocol splits
-    print("\nRecreating protocol splits...")
-    create_protocol_splits(config.dataset_paths, config)
+    # Tạo lại protocol splits cho protocol được chỉ định
+    print(f"\nRecreating splits for {args.protocol}...")
+    create_protocol_data(args.protocol, config.dataset_paths, config)
 
     # Create dataloaders once
     print("\nLoading datasets...")
