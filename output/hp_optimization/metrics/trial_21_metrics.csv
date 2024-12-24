@@ -1,0 +1,2 @@
+epoch,trial,loss,cls_loss,domain_loss,contrast_loss,accuracy,auc,tpr@fpr=0.01,fpr@tpr=0.99,hter,val_loss,val_auc,val_accuracy,val_tpr@fpr=0.01,val_fpr@tpr=0.99,val_hter
+0,21,0.6894741654396057,0.6895328760147095,1.6123046875,-0.9999831914901733,0.5,1.0,1.0,0.0,0.0,0.6966378837823868,0.6020408163265306,0.25,0.0,1.0,1.0
