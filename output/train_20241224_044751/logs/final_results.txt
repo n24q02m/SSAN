@@ -1,0 +1,16 @@
+Final Test Results:
+loss: 0.468618
+auc: 0.858904
+accuracy: 0.796418
+tpr@fpr=0.01: 0.095781
+fpr@tpr=0.99: 0.764368
+hter: 0.834293
+
+Best Validation Metrics:
+epoch: 15.000000
+accuracy: 0.819981
+auc: 0.879570
+loss: 0.509578
+tpr@fpr=0.01: 0.035616
+hter: 0.856473
+val_loss: 0.509578
