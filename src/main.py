@@ -5,6 +5,11 @@ import torch
 from torch.optim import lr_scheduler, Adam, SGD
 import random
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import multiprocessing as mp
+from functools import lru_cache
+import gc
+from torch.cuda import empty_cache
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -153,8 +158,54 @@ def get_scheduler(optimizer, config):
         )
 
 
+def configure_process_pool():
+    """Configure process pool based on system"""
+    cpu_count = mp.cpu_count()
+    if torch.cuda.is_available():
+        # Fewer processes when using GPU to avoid memory issues
+        return min(4, cpu_count)
+    return cpu_count
+
+
+class ParameterCache:
+    """Cache class for optimal parameters"""
+    def __init__(self):
+        self._cache = {}
+        self._found = False
+        
+    def get(self, key):
+        return self._cache.get(key) if self._found else None
+        
+    def set(self, key, value):
+        self._cache[key] = value
+        self._found = True
+        
+    def has_optimal_params(self):
+        return self._found
+
+# Create global cache instance 
+parameter_cache = ParameterCache()
+
+def get_optimal_parameters(model, sample_batch, train_loader, device):
+    """Calculate optimal parameters"""
+    batch_size = find_optimal_batch_size(model, sample_batch)
+    workers = find_optimal_workers(train_loader)
+    return batch_size, workers
+
+def clear_gpu_memory():
+    """Clear GPU memory cache"""
+    if torch.cuda.is_available():
+        empty_cache()
+        gc.collect()
+
 def main():
     args = parse_args()
+    
+    # Configure process pool
+    num_processes = configure_process_pool()
+    
+    # Clear GPU memory before starting
+    clear_gpu_memory()
 
     # Validate fraction
     if args.fraction < 0.01 or args.fraction > 1.0:
@@ -187,125 +238,151 @@ def main():
     # Set random seed
     set_seed(config.seed)
 
-    # Create dataloaders
+    # Create dataloaders once
     print("\nLoading datasets...")
     dataloaders = get_dataloaders(config)
 
+    # Initialize model once
+    model = SSAN(
+        num_domains=config.num_domains,
+        ada_blocks=config.ada_blocks,
+        dropout=config.dropout,
+    )
+
+    # Move model to device
+    if args.device == "cuda":
+        model = model.to(args.device)
+        
     print("\nFinding optimal parameters...")
-    need_recreate = False
-    if not args.batch_size or not args.num_workers:
-        print("Initializing temporary model...")
-        model = SSAN(
-            num_domains=config.num_domains,
-            ada_blocks=config.ada_blocks,
-            dropout=config.dropout,
-        ).to(args.device)
-
-        print("Getting sample batch...")
-        sample_batch = next(iter(dataloaders["train"]))
-
-        if not args.batch_size:
-            print("Finding optimal batch size...")
-            config.batch_size = find_optimal_batch_size(model, sample_batch)
-            print(f"Optimal batch size: {config.batch_size}")
-            need_recreate = True
-
-        if not args.num_workers:
-            print("Finding optimal number of workers...")
-            config.num_workers = find_optimal_workers(dataloaders["train"])
-            print(f"Optimal workers: {config.num_workers}")
-            need_recreate = True
-
-        if need_recreate:
+    # Only find optimal parameters if not cached
+    if not parameter_cache.has_optimal_params():
+        if not args.batch_size or not args.num_workers:
+            sample_batch = next(iter(dataloaders["train"]))
+            
+            if not args.batch_size:
+                print("Finding optimal batch size...")
+                config.batch_size = find_optimal_batch_size(model, sample_batch)
+                print(f"Optimal batch size: {config.batch_size}")
+            
+            if not args.num_workers:
+                print("Finding optimal number of workers...")
+                config.num_workers = find_optimal_workers(dataloaders["train"])
+                print(f"Optimal workers: {config.num_workers}")
+            
+            # Cache the parameters
+            parameter_cache.set(
+                f"{args.device}_{config.img_size}_{config.protocol}",
+                (config.batch_size, config.num_workers)
+            )
+            
+            # Recreate dataloaders with optimal values
             print("\nRecreating dataloaders with optimal values...")
             dataloaders = get_dataloaders(config)
 
-    if args.mode == "train":
-        print("\nPreparing for training...")
+    # Use ProcessPoolExecutor for parallel processing
+    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+        if args.mode == "train":
+            print("\nPreparing for training...")
 
-        if args.auto_hp:
-            print("\nStarting hyperparameter optimization...")
+            if args.auto_hp:
+                print("\nStarting hyperparameter optimization...")
 
-            hp_optimizer = HyperparameterOptimizer(
-                model_class=SSAN,
+                hp_optimizer = HyperparameterOptimizer(
+                    model_class=SSAN,
+                    train_loader=dataloaders["train"],
+                    val_loader=dataloaders["val"],
+                    config=config,
+                    study_name=f"ssan_{config.protocol}",
+                    output_dir=config.output_dir / "hp_optimization",
+                )
+
+                best_params = hp_optimizer.optimize()
+
+                if best_params:  # Only update if we got valid parameters
+                    print("\nBest hyperparameters found:")
+                    for param, value in best_params.items():
+                        print(f"  {param}: {value}")
+                        setattr(config, param, value)
+
+                    # Recreate everything with optimized parameters
+                    if "batch_size" in best_params:
+                        print("\nRecreating dataloaders with optimal batch size...")
+                        dataloaders = get_dataloaders(config)
+                else:
+                    print("\nNo optimal parameters found, using default values")
+
+            # Initialize model AFTER hyperparameter optimization
+            print("\nInitializing model and training components...")
+            model = SSAN(
+                num_domains=config.num_domains,
+                ada_blocks=config.ada_blocks,
+                dropout=config.dropout,
+            ).to(args.device)
+            print("Model initialized")
+
+            optimizer = get_optimizer(model, config)
+            scheduler = get_scheduler(optimizer, config)
+            criterion = {
+                "cls": ClassificationLoss(),
+                "domain": DomainAdversarialLoss(),
+                "contrast": ContrastiveLoss(),
+            }
+
+            # Enable cuDNN benchmarking
+            if args.device == "cuda":
+                torch.backends.cudnn.benchmark = True
+                
+            # Use gradient scaling for mixed precision training
+            scaler = torch.amp.GradScaler()
+
+            # Initialize trainer
+            trainer = Trainer(
+                model=model,
                 train_loader=dataloaders["train"],
                 val_loader=dataloaders["val"],
+                test_loader=dataloaders["test"],
+                optimizer=optimizer,
+                scheduler=scheduler,
+                criterion=criterion,
                 config=config,
-                study_name=f"ssan_{config.protocol}",
-                output_dir=config.output_dir / "hp_optimization",
+                device=args.device,
             )
 
-            best_params = hp_optimizer.optimize()
+            # Train with final parameters
+            best_metrics = trainer.train()
+            print("Training completed. Best metrics:", best_metrics)
+            
+            # Clear memory after training
+            clear_gpu_memory()
 
-            if best_params:  # Only update if we got valid parameters
-                print("\nBest hyperparameters found:")
-                for param, value in best_params.items():
-                    print(f"  {param}: {value}")
-                    setattr(config, param, value)
+        else:  # Test mode
+            if not args.checkpoint:
+                raise ValueError("Checkpoint path required for test mode")
 
-                # Recreate everything with optimized parameters
-                if "batch_size" in best_params:
-                    print("\nRecreating dataloaders with optimal batch size...")
-                    dataloaders = get_dataloaders(config)
-            else:
-                print("\nNo optimal parameters found, using default values")
+            # Initialize model and predictor
+            model = SSAN(
+                num_domains=config.num_domains,
+                ada_blocks=config.ada_blocks,
+                dropout=0.0,  # No dropout for inference
+            )
 
-        # Initialize model AFTER hyperparameter optimization
-        print("\nInitializing model and training components...")
-        model = SSAN(
-            num_domains=config.num_domains,
-            ada_blocks=config.ada_blocks,
-            dropout=config.dropout,
-        ).to(args.device)
-        print("Model initialized")
+            # Disable gradients for inference
+            with torch.no_grad():
+                predictor = Predictor.from_checkpoint(
+                    checkpoint_path=args.checkpoint,
+                    model=model,
+                    test_loader=dataloaders["test"],
+                    device=args.device,
+                    output_dir=config.output_dir,
+                )
 
-        optimizer = get_optimizer(model, config)
-        scheduler = get_scheduler(optimizer, config)
-        criterion = {
-            "cls": ClassificationLoss(),
-            "domain": DomainAdversarialLoss(),
-            "contrast": ContrastiveLoss(),
-        }
+                # Run prediction
+                results = predictor.predict()
+                print("Testing completed")
+                
+            clear_gpu_memory()
 
-        # Initialize trainer
-        trainer = Trainer(
-            model=model,
-            train_loader=dataloaders["train"],
-            val_loader=dataloaders["val"],
-            test_loader=dataloaders["test"],
-            optimizer=optimizer,
-            scheduler=scheduler,
-            criterion=criterion,
-            config=config,
-            device=args.device,
-        )
-
-        # Train with final parameters
-        best_metrics = trainer.train()
-        print("Training completed. Best metrics:", best_metrics)
-
-    else:  # Test mode
-        if not args.checkpoint:
-            raise ValueError("Checkpoint path required for test mode")
-
-        # Initialize model and predictor
-        model = SSAN(
-            num_domains=config.num_domains,
-            ada_blocks=config.ada_blocks,
-            dropout=0.0,  # No dropout for inference
-        )
-
-        predictor = Predictor.from_checkpoint(
-            checkpoint_path=args.checkpoint,
-            model=model,
-            test_loader=dataloaders["test"],
-            device=args.device,
-            output_dir=config.output_dir,
-        )
-
-        # Run prediction
-        results = predictor.predict()
-        print("Testing completed")
+    return best_metrics
 
 
 if __name__ == "__main__":

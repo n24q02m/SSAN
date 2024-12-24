@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import torch
+import multiprocessing as mp
 
 
 class Config:
@@ -83,3 +84,18 @@ class Config:
 
         # Device config
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Multiprocessing configs
+        self.num_processes = None # Will be set dynamically
+        self.prefetch_factor = 2
+        self.persistent_workers = True
+        
+        # Memory management
+        self.pin_memory = torch.cuda.is_available()
+        self.non_blocking = True
+        
+        # Mixed precision training
+        self.use_amp = True # Automatic Mixed Precision
+        
+        # Data loading optimization
+        self.num_workers = min(8, mp.cpu_count())
