@@ -224,6 +224,20 @@ def main():
     config = Config()
     config.protocol = args.protocol
 
+    # Xử lý đường dẫn protocol dựa trên môi trường
+    if config.is_kaggle:
+        print("\nRunning on Kaggle environment")
+        protocol_dir = config.protocol_dir
+    else:
+        print("\nRunning on local environment") 
+        protocol_dir = config.protocol_dir
+
+    protocol_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Tạo lại protocol
+    print(f"\nRecreating splits for {args.protocol}...")
+    create_protocol_data(args.protocol, config.dataset_paths, config)
+
     # Override config with args
     if args.fraction:
         config.fraction = max(0.01, args.fraction)

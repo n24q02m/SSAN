@@ -142,6 +142,10 @@ def create_protocol_data(protocol, dataset_paths, config):
 
     protocol_dir = config.protocol_dir / protocol
     protocol_dir.mkdir(parents=True, exist_ok=True)
+    for split in ["train.csv", "val.csv", "test.csv"]:
+        file_path = protocol_dir / split
+        if file_path.exists():
+            file_path.unlink()
 
     # Initialize dictionaries for each split
     train_data = []
