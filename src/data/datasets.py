@@ -9,14 +9,20 @@ from functools import partial
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 from prefetch_generator import BackgroundGenerator
 from tqdm import tqdm
+import warnings
+
+warnings.filterwarnings("ignore", message="Invalid SOS parameters for sequential JPEG")
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.config import Config
+
+os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
+
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 
 def get_transforms(mode="train", config=None):

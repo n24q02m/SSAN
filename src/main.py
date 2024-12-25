@@ -388,10 +388,11 @@ def main():
                 # Run prediction
                 results = predictor.predict()
                 print("Testing completed")
+                return results  # Return test results instead of best_metrics
 
             clear_gpu_memory()
 
-    return best_metrics
+    return None  # Return None if no results available
 
 
 if __name__ == "__main__":
