@@ -164,10 +164,22 @@
     │   ├── hp_optimization/
     │   │   ├── metrics/
     │   │   │   ├── trial_0_metrics.csv/
-    │   │   │   ├── trial_1_metrics.csv/
-    │   │   │   └── trial_2_metrics.csv/
-    │   │   └── ssan_protocol_1.db/
-    │   ├── test_20241223_100656/
+    │   │   │   ├── trial_10_metrics.csv/
+    │   │   │   ├── trial_11_metrics.csv/
+    │   │   │   ├── trial_12_metrics.csv/
+    │   │   │   ├── trial_13_metrics.csv/
+    │   │   │   ├── trial_14_metrics.csv/
+    │   │   │   ├── trial_15_metrics.csv/
+    │   │   │   ├── trial_16_metrics.csv/
+    │   │   │   ├── trial_17_metrics.csv/
+    │   │   │   ├── trial_18_metrics.csv/
+    │   │   │   ... (28 more files)
+    │   │   ├── ssan_protocol_1.db/
+    │   │   ├── ssan_protocol_1_results.csv/
+    │   │   ├── ssan_protocol_3.db/
+    │   │   ├── ssan_protocol_3_results.csv/
+    │   │   └── ssan_protocol_4.db/
+    │   ├── test_20241225_090636/
     │   │   ├── csv/
     │   │   │   ├── metrics.csv/
     │   │   │   └── predictions.csv/
@@ -175,7 +187,36 @@
     │   │   │   └── inference.log/
     │   │   └── plots/
     │   │       └── roc_curve.png/
-    │   ├── train_20241223_092631/
+    │   ├── train_20241223_204258/
+    │   │   ├── checkpoints/
+    │   │   │   ├── best.pth/
+    │   │   │   └── latest.pth/
+    │   │   ├── csv/
+    │   │   │   ├── train_metrics.csv/
+    │   │   │   └── val_metrics.csv/
+    │   │   ├── logs/
+    │   │   │   └── final_results.txt/
+    │   │   └── plots/
+    │   │       ├── accuracy_curve.png/
+    │   │       ├── auc_curve.png/
+    │   │       ├── hter_curve.png/
+    │   │       └── loss_curve.png/
+    │   ├── train_20241224_022726/
+    │   │   ├── checkpoints/
+    │   │   │   ├── best.pth/
+    │   │   │   └── latest.pth/
+    │   │   ├── csv/
+    │   │   │   ├── train_metrics.csv/
+    │   │   │   └── val_metrics.csv/
+    │   │   ├── logs/
+    │   │   │   ├── final_results.txt/
+    │   │   │   └── training.log/
+    │   │   └── plots/
+    │   │       ├── accuracy_curve.png/
+    │   │       ├── auc_curve.png/
+    │   │       ├── hter_curve.png/
+    │   │       └── loss_curve.png/
+    │   ├── train_20241224_044751/
     │   │   ├── checkpoints/
     │   │   │   ├── best.pth/
     │   │   │   └── latest.pth/
@@ -250,47 +291,6 @@
     │   ├── __init__.py/
     │   ├── config.py/
     │   └── main.py/
-    ├── SSAN/
-    │   ├── configs/
-    │   │   └── __init__.py/
-    │   ├── datasets/
-    │   │   ├── __init__.py/
-    │   │   ├── data_merge.py/
-    │   │   ├── Load_CASIA_train.py/
-    │   │   ├── Load_CASIA_valtest.py/
-    │   │   ├── Load_OULUNPU_train.py/
-    │   │   └── Load_OULUNPU_valtest.py/
-    │   ├── images/
-    │   │   ├── img_single_tpr_fpr.jpg/
-    │   │   └── main.png/
-    │   ├── Large_Scale_FAS_Benchmarks/
-    │   │   └── README.md/
-    │   ├── loss/
-    │   │   └── __init__.py/
-    │   ├── networks/
-    │   │   ├── __init__.py/
-    │   │   ├── pub_mod.py/
-    │   │   ├── SSAN_M.py/
-    │   │   └── SSAN_R.py/
-    │   ├── optimizers/
-    │   │   ├── __init__.py/
-    │   │   └── lr_scheduler.py/
-    │   ├── transformers/
-    │   │   ├── __pycache__/
-    │   │   │   ├── __init__.cpython-310.pyc/
-    │   │   │   ├── __init__.cpython-312.pyc/
-    │   │   │   ├── transformer_test.cpython-310-pytest-8.3.4.pyc/
-    │   │   │   ├── transformer_train.cpython-310.pyc/
-    │   │   │   └── transformer_train.cpython-312.pyc/
-    │   │   ├── __init__.py/
-    │   │   ├── transformer_test.py/
-    │   │   └── transformer_train.py/
-    │   ├── utils/
-    │   │   ├── __init__.py/
-    │   │   └── performance.py/
-    │   ├── LICENSE/
-    │   ├── README.md/
-    │   └── solver.py/
     ├── .env/
     ├── download_datasets.py/
     ├── kaggle_run.ipynb/
