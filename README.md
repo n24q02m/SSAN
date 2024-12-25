@@ -82,7 +82,7 @@ pip install --pre torch torchvision torchaudio --index-url https://download.pyto
 pip install -r requirements.txt
 ```
 
-1.  **Prepare Datasets:**
+3.  **Prepare Datasets:**
 
 *   Download the required datasets and place them in the `data` directory according to the structure described in `docs/protocols.md`.
     *   [CelebA-Spoof](https://www.kaggle.com/datasets/n24q02m/celeba-spoof-face-anti-spoofing-dataset) (private dataset)
